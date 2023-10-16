@@ -19,7 +19,7 @@ Item {
 
         Behavior on color {
             ColorAnimation {
-                 duration: 50
+                duration: 50
             }
         }
     }

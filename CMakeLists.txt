@@ -20,9 +20,11 @@ qt_add_qml_module(appSmartHome
     QML_FILES QuickActionButton.qml
     QML_FILES FrequentlyUsedButton.qml
     QML_FILES FavouriteRoomsButton.qml
+    QML_FILES BottomBarButton.qml
+
+    README.md
 
     RESOURCES
-    README.md
     "assets/icons/settings.svg"
     "assets/icons/sun-cloud.svg"
     "assets/icons/light-on.svg"

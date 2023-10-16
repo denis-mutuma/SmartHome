@@ -19,18 +19,20 @@ Window {
         // homepage layout
         ColumnLayout {
             width: parent.width
-            spacing: 22
+            spacing: 11
 
             // topbar
             Rectangle {
                 id: topBar
                 width: parent.width
-                height: 100
+                height: 108
                 color: "#2F2F37"
 
                 RowLayout {
+                    id: topBarLayout
                     anchors.fill: parent
                     spacing: 22
+                    anchors.margins: 11
 
                     ColumnLayout {
                         Layout.alignment: Qt.AlignVCenter
@@ -84,34 +86,25 @@ Window {
                         }
                     }
 
-                    ColumnLayout {
-                        Layout.alignment: Qt.AlignVCenter
+                    ClickableImage {
+                        id: settingsIcon
+                        width: 30
+                        height: 30
+                        source: "assets/icons/settings.svg"
 
-                        RowLayout {
-                            spacing: 30
+                        onClicked: {
+                            console.log("settings clicked")
+                        }
+                    }
 
-                            ClickableImage {
-                                id: settingsIcon
-                                width: 30
-                                height: 30
-                                source: "assets/icons/settings.svg"
+                    ClickableImage {
+                        id: notificationsIcon
+                        width: 30
+                        height: 30
+                        source: "assets/icons/settings.svg"
 
-                                onClicked: {
-                                    console.log("settings clicked")
-                                }
-                            }
-
-                            ClickableImage {
-                                id: notificationsIcon
-                                width: 30
-                                height: 30
-                                source: "assets/icons/settings.svg"
-
-                                onClicked: {
-                                    console.log("notifications clicked")
-                                }
-                            }
-
+                        onClicked: {
+                            console.log("notifications clicked")
                         }
                     }
                 }
@@ -121,12 +114,12 @@ Window {
             Rectangle {
                 id: quickActions
                 width: parent.width
-                height: 100
+                height: 92
                 color: "#18171C"
 
                 ColumnLayout {
                     width: parent.width
-                    spacing: 22
+                    spacing: 11
 
                     RowLayout {
                         width: parent.width
@@ -154,8 +147,7 @@ Window {
                         id: quickActionScrollView
                         width: parent.width
                         height: parent.height
-                        clip: true
-                        contentHeight: quickActionsButtons.height + 18
+                        contentHeight: quickActionsButtons.height + 11
 
                         ScrollBar.horizontal: ScrollBar {
                             id: quickActionScrollBar
@@ -170,7 +162,7 @@ Window {
                             }
 
                             contentItem: Rectangle {
-                                implicitWidth: 100
+                                implicitWidth: 50
                                 implicitHeight: 2
                                 radius: 1
                                 color: "#FFFFFF"
@@ -183,7 +175,7 @@ Window {
 
                         RowLayout {
                             id: quickActionsButtons
-                            spacing: 22
+                            spacing: 16
                             width: parent.width
 
                             QuickActionButton {
@@ -198,7 +190,6 @@ Window {
                                 onClicked: {
                                     active = !active
                                 }
-
                             }
 
                             QuickActionButton {
@@ -217,7 +208,7 @@ Window {
 
                             QuickActionButton {
                                 id: arriveHome
-                                width: 78
+                                width: 98
                                 height: 50
                                 text: qsTr("Arrive Home")
                                 color: "#2F2F37"
@@ -227,12 +218,11 @@ Window {
                                 onClicked: {
                                     active = !active
                                 }
-
                             }
 
                             QuickActionButton {
                                 id: goodNight
-                                width: 78
+                                width: 98
                                 height: 50
                                 text: qsTr("Good Night")
                                 color: "#2F2F37"
@@ -245,7 +235,6 @@ Window {
                             }
                         }
                     }
-
                 }
             }
 
@@ -253,12 +242,12 @@ Window {
             Rectangle {
                 id: frequentlyUsed
                 width: parent.width
-                height: 188
+                height: 177
                 color: "#18171C"
 
                 ColumnLayout {
                     width: parent.width
-                    spacing: 22
+                    spacing: 11
 
                     Text {
                         id: frequentlyUsedText
@@ -303,7 +292,7 @@ Window {
                         RowLayout {
                             id: frequentlyUsedButtons
                             width: parent.width
-                            spacing: 22
+                            spacing: 16
 
                             FrequentlyUsedButton {
                                 active: true
@@ -368,113 +357,151 @@ Window {
             // Favourite rooms
             ColumnLayout {
                 width: parent.width
-                height: parent.height
-                spacing: 22
+                height: 300
+                anchors.bottom: bottomBar.bottom
 
-                Text {
-                    id: roomsText
-                    font.pixelSize: 14
-                    font.bold: true
-                    text: qsTr("Favourite Rooms")
-                    color: "#FFFFFF"
-                    Layout.alignment: Qt.AlignLeft
+                RowLayout {
+                    width: parent.width
+
+                    Text {
+                        id: favouriteRoomsText
+                        font.pixelSize: 14
+                        font.bold: true
+                        text: qsTr("Favourite Rooms")
+                        color: "#FFFFFF"
+                        Layout.alignment: Qt.AlignLeft
+                    }
+
+                    Text {
+                        id: favouriteRoomsEdit
+                        font.pixelSize: 14
+                        font.bold: true
+                        text: qsTr("Edit")
+                        color: "#FFFFFF"
+                        Layout.alignment: Qt.AlignRight
+                    }
                 }
 
                 Rectangle {
                     id: rooms
                     color: "#18171C"
                     width: parent.width
-                    height: 300
+                    height: parent.height
 
                     ScrollView {
                         id: roomsScrollView
                         width: parent.width
                         height: parent.height
-                        clip: true
-                        anchors.fill: parent
 
-                        GridView {
+                        ScrollBar.vertical: ScrollBar {
+                            id: roomsScrollBar
+                            active: true
+                            orientation: Qt.Vertical
+                            interactive: true
+
+                            anchors {
+                                right: parent.right
+                                top: parent.top
+                                bottom: parent.bottom
+                            }
+
+                            contentItem: Rectangle {
+                                implicitWidth: 2
+                                implicitHeight: 30
+                                radius: 1
+                                color: "#FFFFFF"
+                            }
+
+                            background: Rectangle {
+                                color: "transparent"
+                            }
+                        }
+
+                        GridLayout {
                             id: roomsGrid
                             width: parent.width
                             height: parent.height
-                            clip: true
-                            cellWidth: 150
-                            cellHeight: 150
-                            flow: GridView.FlowTopToBottom
-                            cacheBuffer: 4096
+                            columns: 2
+                            columnSpacing: 22
 
-                            ScrollBar.vertical: ScrollBar {
-                                id: roomsScrollBar
-                                active: true
-                                orientation: Qt.Vertical
-                                interactive: true
-
-                                anchors {
-                                    right: parent.right
-                                    top: parent.top
-                                    bottom: parent.bottom
-                                }
-
-                                contentItem: Rectangle {
-                                    implicitWidth: 2
-                                    implicitHeight: 100
-                                    radius: 1
-                                    color: "#FFFFFF"
-                                }
-
-                                background: Rectangle {
-                                    color: "transparent"
-                                }
+                            FavouriteRoomsButton {
+                                room: "Living room"
+                                deviceCount: 8
+                                source: "assets/images/living-room.jpeg"
                             }
 
-                            model: 1
+                            FavouriteRoomsButton {
+                                room: "Living room"
+                                deviceCount: 8
+                                source: "assets/images/living-room.jpeg"
+                            }
 
-                            delegate: GridLayout {
-                                id: roomsGridLayout
-                                width: parent.width
-                                height: parent.height
-                                columns: 2
-                                rowSpacing: 22
-                                columnSpacing: 22
+                            FavouriteRoomsButton {
+                                room: "Living room"
+                                deviceCount: 8
+                                source: "assets/images/living-room.jpeg"
+                            }
 
-                                FavouriteRoomsButton {
-                                    room: "Living room"
-                                    deviceCount: 8
-                                    source: "assets/images/living-room.jpeg"
-                                }
+                            FavouriteRoomsButton {
+                                room: "Living room"
+                                deviceCount: 8
+                                source: "assets/images/living-room.jpeg"
+                            }
 
-                                FavouriteRoomsButton {
-                                    room: "Living room"
-                                    deviceCount: 8
-                                    source: "assets/images/living-room.jpeg"
-                                }
+                            FavouriteRoomsButton {
+                                room: "Living room"
+                                deviceCount: 8
+                                source: "assets/images/living-room.jpeg"
+                            }
 
-                                FavouriteRoomsButton {
-                                    room: "Living room"
-                                    deviceCount: 8
-                                    source: "assets/images/living-room.jpeg"
-                                }
-
-                                FavouriteRoomsButton {
-                                    room: "Living room"
-                                    deviceCount: 8
-                                    source: "assets/images/living-room.jpeg"
-                                }
-
-                                FavouriteRoomsButton {
-                                    room: "Living room"
-                                    deviceCount: 8
-                                    source: "assets/images/living-room.jpeg"
-                                }
-
-                                FavouriteRoomsButton {
-                                    room: "Living room"
-                                    deviceCount: 8
-                                    source: "assets/images/living-room.jpeg"
-                                }
+                            FavouriteRoomsButton {
+                                room: "Living room"
+                                deviceCount: 8
+                                source: "assets/images/living-room.jpeg"
                             }
                         }
                     }
+                }
+            }
+
+            // bottom bar
+            RowLayout {
+                id: bottomBar
+                width: parent.width
+                height: 25
+                anchors.bottom: parent.bottom
+                spacing: 16
+
+                BottomBarButton {
+                    id: homeButton
+                    width: 78
+                    height: 40
+                    text: "Home"
+                    color: "red"
+                }
+
+                BottomBarButton {
+                    id: roomsButton
+                    width: 78
+                    height: 40
+                    text: "Devices"
+                    color: "green"
+                }
+
+                BottomBarButton {
+                    id: devicesButton
+                    width: 78
+                    height: 40
+                    text: "Rooms"
+                    color: "blue"
+                }
+
+                BottomBarButton {
+                    id: statsButton
+                    width: 78
+                    height: 40
+                    text: "Stats"
+                    color: "orange"
                 }
             }
         }
