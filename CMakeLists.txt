@@ -17,8 +17,12 @@ endif()
 qt_add_library(smarthome_core STATIC
     src/core/home_rules.cpp
     src/core/home_json.cpp
+    src/app/token_store.cpp
 )
-target_include_directories(smarthome_core PUBLIC src/core)
+target_include_directories(smarthome_core PUBLIC src/core src/app)
+if(WIN32)
+    target_link_libraries(smarthome_core PUBLIC crypt32)
+endif()
 target_link_libraries(smarthome_core PUBLIC Qt6::Core)
 if(MSVC)
     target_compile_options(smarthome_core PRIVATE /W4)
@@ -48,6 +52,7 @@ endfunction()
 
 smarthome_add_test(tst_home_rules tests/tst_home_rules.cpp)
 smarthome_add_test(tst_home_json tests/tst_home_json.cpp)
+smarthome_add_test(tst_token_store tests/tst_token_store.cpp)
 
 qt_add_executable(appSmartHome
     main.cpp
