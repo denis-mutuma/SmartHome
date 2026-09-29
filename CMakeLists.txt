@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Qt6 6.11 REQUIRED COMPONENTS Quick QuickControls2 Network Test)
 
 qt_standard_project_setup(REQUIRES 6.11)
+set(QT_USE_TARGET_ANDROID_BUILD_DIR TRUE CACHE BOOL "Separate Android build directory for each executable")
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/config.local.cmake")
     include("${CMAKE_SOURCE_DIR}/config.local.cmake")
