@@ -1,12 +1,43 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.22)
 
 project(SmartHome VERSION 0.1 LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS Quick)
+find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Network Test)
 
-qt_standard_project_setup()
+qt_standard_project_setup(REQUIRES 6.11)
+
+if(EXISTS "${CMAKE_SOURCE_DIR}/config.local.cmake")
+    include("${CMAKE_SOURCE_DIR}/config.local.cmake")
+endif()
+
+qt_add_library(smarthome_core STATIC
+    src/core/home_rules.cpp
+)
+target_include_directories(smarthome_core PUBLIC src/core)
+target_link_libraries(smarthome_core PUBLIC Qt6::Core)
+if(MSVC)
+    target_compile_options(smarthome_core PRIVATE /W4)
+else()
+    target_compile_options(smarthome_core PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+enable_testing()
+qt_add_executable(tst_home_rules tests/tst_home_rules.cpp)
+target_link_libraries(tst_home_rules PRIVATE smarthome_core Qt6::Test)
+add_test(NAME home_rules COMMAND tst_home_rules)
+if(WIN32)
+    cmake_path(GET Qt6_DIR PARENT_PATH _qt_cmake_dir)
+    cmake_path(GET _qt_cmake_dir PARENT_PATH _qt_lib_dir)
+    cmake_path(GET _qt_lib_dir PARENT_PATH _qt_prefix)
+    cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH _cxx_bin)
+    set_property(TEST home_rules PROPERTY ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${_qt_prefix}/bin"
+        "PATH=path_list_prepend:${_cxx_bin}")
+endif()
 
 qt_add_executable(appSmartHome
     main.cpp
