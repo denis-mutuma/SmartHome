@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Network Test)
+find_package(Qt6 6.11 REQUIRED COMPONENTS Quick QuickControls2 Network Test)
 
 qt_standard_project_setup(REQUIRES 6.11)
 
@@ -54,55 +54,75 @@ smarthome_add_test(tst_home_rules tests/tst_home_rules.cpp)
 smarthome_add_test(tst_home_json tests/tst_home_json.cpp)
 smarthome_add_test(tst_token_store tests/tst_token_store.cpp)
 
+if(NOT DEFINED SMARTHOME_SUPABASE_URL)
+    set(SMARTHOME_SUPABASE_URL "")
+endif()
+if(NOT DEFINED SMARTHOME_SUPABASE_ANON_KEY)
+    set(SMARTHOME_SUPABASE_ANON_KEY "")
+endif()
+
 qt_add_executable(appSmartHome
     main.cpp
 )
 
+set_source_files_properties(qml/Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+
 qt_add_qml_module(appSmartHome
     URI SmartHome
     VERSION 1.0
-    QML_FILES Main.qml
-    QML_FILES ClickableImage.qml
-    QML_FILES QuickActionButton.qml
-    QML_FILES FrequentlyUsedButton.qml
-    QML_FILES FavouriteRoomsButton.qml
-
+    SOURCES
+        src/app/api_client.h
+        src/app/api_client.cpp
+        src/app/session_controller.h
+        src/app/session_controller.cpp
+    QML_FILES
+        qml/Main.qml
+        qml/Theme.qml
+        qml/LoginPage.qml
+        qml/RegisterPage.qml
+        qml/HomePage.qml
+        qml/RoomPage.qml
+        qml/DeviceEditPage.qml
+        qml/SettingsPage.qml
+        qml/ActionButton.qml
     RESOURCES
-    README.md
-    "assets/icons/settings.svg"
-    "assets/icons/sun-cloud.svg"
-    "assets/icons/light-on.svg"
-    "assets/icons/light-off.svg"
-    "assets/icons/toggle-on.svg"
-    "assets/icons/toggle-off.svg"
-    "assets/icons/white-moon.svg"
-    "assets/icons/grey-moon.svg"
-    "assets/icons/yellow-sun.svg"
-    "assets/icons/white-sun.svg"
-    "assets/icons/green-home.svg"
-    "assets/icons/white-home.svg"
-
-    "assets/images/bedroom.jpeg"
-    "assets/images/kitchen.jpeg"
-    "assets/images/garage.jpg"
-    "assets/images/living-room.jpeg"
-    "assets/images/mutuma.jpg"
-
+        assets/icons/settings.svg
+        assets/icons/sun-cloud.svg
+        assets/icons/light-on.svg
+        assets/icons/light-off.svg
+        assets/icons/toggle-on.svg
+        assets/icons/toggle-off.svg
+        assets/icons/white-moon.svg
+        assets/icons/yellow-sun.svg
+        assets/icons/plug.svg
+        assets/icons/thermometer.svg
+        assets/images/mutuma.jpg
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an
 # explicit, fixed bundle identifier manually though.
 set_target_properties(appSmartHome PROPERTIES
-#    MACOSX_BUNDLE_GUI_IDENTIFIER com.example.appSmartHome
+    QT_ANDROID_PACKAGE_NAME org.mutuma.smarthome
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
 )
 
+target_include_directories(appSmartHome PRIVATE src/core src/app)
+target_compile_definitions(appSmartHome PRIVATE
+    "SMARTHOME_SUPABASE_URL=\"${SMARTHOME_SUPABASE_URL}\""
+    "SMARTHOME_SUPABASE_ANON_KEY=\"${SMARTHOME_SUPABASE_ANON_KEY}\""
+)
+if(MSVC)
+    target_compile_options(appSmartHome PRIVATE /W4)
+else()
+    target_compile_options(appSmartHome PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 target_link_libraries(appSmartHome
-    PRIVATE Qt6::Quick
+    PRIVATE smarthome_core Qt6::Quick Qt6::QuickControls2 Qt6::Network
 )
 
 include(GNUInstallDirs)
