@@ -16,6 +16,7 @@ endif()
 
 qt_add_library(smarthome_core STATIC
     src/core/home_rules.cpp
+    src/core/home_json.cpp
 )
 target_include_directories(smarthome_core PUBLIC src/core)
 target_link_libraries(smarthome_core PUBLIC Qt6::Core)
@@ -26,18 +27,27 @@ else()
 endif()
 
 enable_testing()
-qt_add_executable(tst_home_rules tests/tst_home_rules.cpp)
-target_link_libraries(tst_home_rules PRIVATE smarthome_core Qt6::Test)
-add_test(NAME home_rules COMMAND tst_home_rules)
 if(WIN32)
     cmake_path(GET Qt6_DIR PARENT_PATH _qt_cmake_dir)
     cmake_path(GET _qt_cmake_dir PARENT_PATH _qt_lib_dir)
     cmake_path(GET _qt_lib_dir PARENT_PATH _qt_prefix)
     cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH _cxx_bin)
-    set_property(TEST home_rules PROPERTY ENVIRONMENT_MODIFICATION
-        "PATH=path_list_prepend:${_qt_prefix}/bin"
-        "PATH=path_list_prepend:${_cxx_bin}")
 endif()
+
+function(smarthome_add_test target source)
+    qt_add_executable(${target} ${source})
+    set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE FALSE)
+    target_link_libraries(${target} PRIVATE smarthome_core Qt6::Test)
+    add_test(NAME ${target} COMMAND ${target})
+    if(WIN32)
+        set_property(TEST ${target} PROPERTY ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_prefix}/bin"
+            "PATH=path_list_prepend:${_cxx_bin}")
+    endif()
+endfunction()
+
+smarthome_add_test(tst_home_rules tests/tst_home_rules.cpp)
+smarthome_add_test(tst_home_json tests/tst_home_json.cpp)
 
 qt_add_executable(appSmartHome
     main.cpp
