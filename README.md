@@ -2,7 +2,7 @@
 
 Qt 6.11 client for Android and Windows. Accounts and rooms live in one Supabase project. Weather comes from Open-Meteo.
 
-Read `AGENTS.md` and `docs/design.md` before changing the app.
+Read `AGENTS.md` before changing the app.
 
 ## Run the desktop app
 
