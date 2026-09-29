@@ -87,7 +87,6 @@ qt_add_qml_module(appSmartHome
         qml/SettingsPage.qml
         qml/ActionButton.qml
     RESOURCES
-        assets/icons/settings.svg
         assets/icons/sun-cloud.svg
         assets/icons/light-on.svg
         assets/icons/light-off.svg
@@ -100,9 +99,6 @@ qt_add_qml_module(appSmartHome
         assets/images/mutuma.jpg
 )
 
-# Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
-# If you are developing for iOS or macOS you should consider setting an
-# explicit, fixed bundle identifier manually though.
 set_target_properties(appSmartHome PROPERTIES
     QT_ANDROID_PACKAGE_NAME org.mutuma.smarthome
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
@@ -124,11 +120,4 @@ endif()
 
 target_link_libraries(appSmartHome
     PRIVATE smarthome_core Qt6::Quick Qt6::QuickControls2 Qt6::Network
-)
-
-include(GNUInstallDirs)
-install(TARGETS appSmartHome
-    BUNDLE DESTINATION .
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )

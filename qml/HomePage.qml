@@ -11,43 +11,50 @@ Page {
 
     background: Rectangle { color: Theme.background }
 
-    header: RowLayout {
-        spacing: 12
-        anchors.leftMargin: 16
-        anchors.rightMargin: 16
+    header: Item {
+        implicitHeight: headerRow.implicitHeight
         width: parent.width
 
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 4
-            Label {
-                text: page.session.greeting
-                color: Theme.text
-                font.pixelSize: Theme.nameSize
-                font.bold: true
-                wrapMode: Text.WordWrap
+        RowLayout {
+            id: headerRow
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 16
+            anchors.rightMargin: 16
+            spacing: 12
+
+            ColumnLayout {
                 Layout.fillWidth: true
-            }
-            RowLayout {
-                visible: page.session.weatherLine.length > 0
-                spacing: 8
-                Image {
-                    source: page.session.weatherIcon
-                    sourceSize.width: 24
-                    sourceSize.height: 24
-                    Accessible.name: qsTr("Weather")
-                }
+                spacing: 4
                 Label {
-                    text: page.session.weatherLine
+                    text: page.session.greeting
                     color: Theme.text
-                    font.pixelSize: Theme.labelSize
+                    font.pixelSize: Theme.nameSize
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+                RowLayout {
+                    visible: page.session.weatherLine.length > 0
+                    spacing: 8
+                    Image {
+                        source: page.session.weatherIcon
+                        sourceSize.width: 24
+                        sourceSize.height: 24
+                        Accessible.name: qsTr("Weather")
+                    }
+                    Label {
+                        text: page.session.weatherLine
+                        color: Theme.text
+                        font.pixelSize: Theme.labelSize
+                    }
                 }
             }
-        }
-        ActionButton {
-            text: qsTr("Settings")
-            fill: Theme.card
-            onClicked: page.openSettings()
+            ActionButton {
+                text: qsTr("Settings")
+                fill: Theme.card
+                onClicked: page.openSettings()
+            }
         }
     }
 

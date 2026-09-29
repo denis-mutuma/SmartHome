@@ -132,7 +132,6 @@ std::optional<SessionTokens> parseSession(const QByteArray& body)
     SessionTokens session;
     session.accessToken = stringField(obj, "access_token");
     session.refreshToken = stringField(obj, "refresh_token");
-    session.expiresIn = obj.value(QLatin1String("expires_in")).toInt();
     const QJsonValue user = obj.value(QLatin1String("user"));
     if (user.isObject()) {
         session.userId = stringField(user.toObject(), "id");

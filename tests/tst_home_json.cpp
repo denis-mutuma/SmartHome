@@ -29,7 +29,6 @@ void HomeJsonTest::sessionFromUser()
     })";
     const std::optional<SessionTokens> session = parseSession(body);
     QVERIFY(session.has_value());
-    QCOMPARE(session->expiresIn, 3600);
     QCOMPARE(session->refreshToken, QStringLiteral("refresh-1"));
     QCOMPARE(session->userId, QStringLiteral("123e4567-e89b-12d3-a456-426614174000"));
     QCOMPARE(session->email, QStringLiteral("a@b.c"));

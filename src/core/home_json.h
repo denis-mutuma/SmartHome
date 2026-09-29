@@ -9,7 +9,6 @@
 struct SessionTokens {
     QString accessToken;
     QString refreshToken;
-    int expiresIn = 0;
     QString userId;
     QString email;
 };

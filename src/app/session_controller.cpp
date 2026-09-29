@@ -398,7 +398,6 @@ void SessionController::applySession(const SessionTokens& session)
     api_.setAccessToken(accessToken_);
     refreshToken_ = session.refreshToken;
     userId_ = session.userId;
-    email_ = session.email;
     saveRefreshToken(refreshToken_, sessionFilePath());
     refreshRunning_ = false;
     if (!signedIn_) {
@@ -474,7 +473,6 @@ void SessionController::clearLocal()
     api_.setAccessToken({});
     clearRefreshToken(sessionFilePath());
     userId_.clear();
-    email_.clear();
     firstName_.clear();
     city_.clear();
     rooms_.clear();
