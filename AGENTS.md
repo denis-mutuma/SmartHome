@@ -50,7 +50,7 @@ Schema: `supabase/migrations/0001_home.sql`. Paste it in the SQL editor. The CLI
 
 ## Layout
 
-`qml/` screens, `src/app/` HTTP and session, `src/core/` rules and JSON, `tests/` for those core pieces, `supabase/migrations/` for the schema. Run steps are in `README.md`.
+`qml/` screens, `src/app/` HTTP and session, `src/core/` rules and JSON, `tests/` for those core pieces, `supabase/migrations/` for the schema. Diagrams are in `docs/architecture.md`. Run steps are in `README.md`.
 
 ## Definition of done
 
