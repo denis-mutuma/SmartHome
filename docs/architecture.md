@@ -25,7 +25,7 @@ flowchart LR
 
 The client can write `devices.is_on`, but this repository contains no command broker, device adapter, gateway, or acknowledgement path. A successful database write therefore does not establish that a physical device changed state. The external sensor writer is user-reported; its repository, payload, credentials, and destination schema remain unknown.
 
-The client stores an access token in memory and a refresh token in its platform-specific session file. The Android storage is app-private but not encrypted by the current token store. Review platform secure-storage options before treating session persistence as production-ready.
+The client stores an access token in memory and a refresh token in its platform-specific session file. Writes use atomic file replacement. Windows protects the token with DPAPI; Android stores it in an app-private file without encryption, so platform secure-storage work remains outstanding. A failed token save leaves the in-memory session active and displays a warning. Transport failures during refresh preserve the saved session; HTTP 400/401 refresh rejection clears it.
 
 ## Current Client Shape
 
@@ -44,7 +44,7 @@ flowchart TB
   session --> tokens
 ```
 
-`SessionController` currently coordinates authentication, refresh, room/device state, weather, and mutation callbacks. This is a prototype boundary, not a required shape for the rebuild. Existing tests cover core rules, JSON parsing, and token storage; backend/controller behavior and physical-device interaction are not covered by automated tests.
+`SessionController` currently coordinates authentication, refresh, room/device state, weather, and mutation callbacks. This is a prototype boundary, not a required shape for the rebuild. The five CTest targets cover core rules, JSON parsing, token storage, API-client request behavior, and session-controller refresh, persistence, and mutation-result behavior. No test proves backend authorization against a live project or physical-device action.
 
 ## Confirmed Gaps
 
@@ -54,6 +54,7 @@ flowchart TB
 - The migration constrains thermometer values and grants access based on the current user-token model. Neither rule is confirmed for the external writer or intended household sharing.
 - The app polls while active. There is no demonstrated live command delivery or reconnect protocol.
 - Per-request retry identity, sign-out cancellation, and mutation-result navigation now address the previously identified cross-request replay, late-reply, and premature-dismissal cases. A successful database write still does not prove that a physical device acted.
+- Room and device mutations only report success when PostgREST returns an affected row; delete requests ask for the deleted row ID. Profile updates validate their returned profile row.
 
 These are review findings against the prototype. Fixes that depend on the actual telemetry or hardware contract must wait for that contract rather than guessing new columns or policies.
 

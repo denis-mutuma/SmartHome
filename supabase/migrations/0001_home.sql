@@ -1,5 +1,5 @@
--- Home schema for the Supabase SQL editor.
--- Email confirmation must be off so signup returns a session.
+-- Unvalidated prototype schema. Do not apply to a non-disposable project.
+-- Email confirmation was disabled for the original prototype signup flow.
 
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,

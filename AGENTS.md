@@ -26,6 +26,6 @@ Read this file before editing. This repository is a prototype being rebuilt in s
 
 ## Current implementation map
 
-The current Qt application is built with CMake. `qml/` contains screens, `src/app/` contains the HTTP/session code, `src/core/` contains rules and JSON parsing, `tests/` contains core tests, and `supabase/migrations/` contains a provisional schema. These paths describe the prototype, not a permanent architecture.
+The current Qt application is built with CMake. `qml/` contains screens, `src/app/` contains the HTTP/session code, `src/core/` contains rules and JSON parsing, `tests/` contains core, API-client, and session-controller tests, and `supabase/migrations/` contains a provisional schema. These paths describe the prototype, not a permanent architecture.
 
 The current desktop baseline uses Qt 6.11.2 MinGW at `C:\Qt\6.11.2\mingw_64` and `C:\Qt\Tools\mingw1310_64`. Keep platform-specific setup documented only after the target platforms are chosen.
