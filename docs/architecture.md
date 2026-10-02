@@ -49,7 +49,8 @@ flowchart TB
 ## Confirmed Gaps
 
 - Device toggles patch a row directly. There is no observed path to hardware, command identity, device acknowledgement, or reported-state reconciliation.
-- Thermometer creation seeds `22.0` and stale readings are randomly changed by the client. These are fabricated measurements and must not be considered real telemetry.
+- The previous client seeded `22.0` and randomly changed stale readings. That writer is removed; existing saved sensor rows remain display-only while the telemetry contract is unknown.
+- New sensor creation is disabled in the client because the provisional migration requires a reading at insert time. The migration is not changed or treated as the target schema.
 - The migration constrains thermometer values and grants access based on the current user-token model. Neither rule is confirmed for the external writer or intended household sharing.
 - The app polls while active. There is no demonstrated live command delivery or reconnect protocol.
 - Shared retry state and callbacks that outlive sign-out can create stale or cross-request behavior. Mutation screens can dismiss before the service confirms success.

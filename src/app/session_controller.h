@@ -4,7 +4,6 @@
 #include "home_json.h"
 
 #include <QObject>
-#include <QSet>
 #include <QVariantList>
 #include <QtQml/qqmlregistration.h>
 
@@ -68,7 +67,6 @@ private:
     void startRefresh();
     void clearLocal();
     void setStatus(const QString& message);
-    void walkStaleReadings();
     bool requireFields(const QString& name, const QString& email, const QString& password, bool withName);
     int nextRoomPosition() const;
     int nextDevicePosition(const QString& roomId) const;
@@ -85,7 +83,6 @@ private:
     QList<RoomRow> rooms_;
     QList<std::function<void()>> afterRefresh_;
     std::function<void()> lastCall_;
-    QSet<QString> pendingReadings_;
     QString toggleRestoreId_;
     std::optional<bool> toggleRestoreOn_;
     bool signedIn_ = false;

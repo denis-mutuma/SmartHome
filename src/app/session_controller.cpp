@@ -5,7 +5,6 @@
 
 #include <QDateTime>
 #include <QGuiApplication>
-#include <QRandomGenerator>
 #include <QTime>
 
 #include <algorithm>
@@ -195,7 +194,7 @@ bool SessionController::createDevice(const QString& roomId, const QString& name,
         setStatus(QStringLiteral("Use 1 to 40 characters."));
         return false;
     }
-    if (kind != QLatin1String("light") && kind != QLatin1String("plug") && kind != QLatin1String("thermometer")) {
+    if (kind != QLatin1String("light") && kind != QLatin1String("plug")) {
         setStatus(QStringLiteral("The service could not complete the request."));
         return false;
     }
@@ -296,7 +295,6 @@ void SessionController::onCompleted(const QString& op, int status, const QByteAr
         }
         rooms_ = *parsed;
         emit roomsChanged();
-        walkStaleReadings();
         return;
     }
     if (op == QLatin1String("geocode")) {
@@ -317,22 +315,6 @@ void SessionController::onCompleted(const QString& op, int status, const QByteAr
             + weatherLabel(now->weatherCode);
         weatherIconFile_ = ::weatherIconFile(now->weatherCode, now->isDay);
         emit weatherChanged();
-        return;
-    }
-    if (op == QLatin1String("device-reading")) {
-        const std::optional<QList<DeviceRow>> updated = parseDevices(body);
-        if (updated.has_value() && !updated->isEmpty()) {
-            const DeviceRow& row = updated->at(0);
-            pendingReadings_.remove(row.id);
-            for (RoomRow& room : rooms_) {
-                for (DeviceRow& device : room.devices) {
-                    if (device.id == row.id) {
-                        device = row;
-                    }
-                }
-            }
-            emit roomsChanged();
-        }
         return;
     }
     if (op == QLatin1String("device-on")) {
@@ -363,9 +345,6 @@ void SessionController::onFailed(const QString& op, int status, const QString& m
         clearLocal();
         setStatus(message);
         return;
-    }
-    if (op == QLatin1String("device-reading")) {
-        pendingReadings_.clear();
     }
     if (status == 401 && !didRetry_ && op != QLatin1String("login") && op != QLatin1String("signup")) {
         didRetry_ = true;
@@ -478,7 +457,6 @@ void SessionController::clearLocal()
     rooms_.clear();
     afterRefresh_.clear();
     lastCall_ = nullptr;
-    pendingReadings_.clear();
     weatherLine_.clear();
     weatherIconFile_.clear();
     toggleRestoreId_.clear();
@@ -492,28 +470,6 @@ void SessionController::clearLocal()
     emit roomsChanged();
     emit weatherChanged();
     emit greetingChanged();
-}
-
-void SessionController::walkStaleReadings()
-{
-    const QDateTime now = QDateTime::currentDateTimeUtc();
-    for (const RoomRow& room : rooms_) {
-        for (const DeviceRow& device : room.devices) {
-            if (device.kind != QLatin1String("thermometer") || !device.celsius.has_value()) {
-                continue;
-            }
-            if (pendingReadings_.contains(device.id) || !readingIsStale(device.readingAt, now)) {
-                continue;
-            }
-            int tenths = QRandomGenerator::global()->bounded(-3, 4);
-            if (tenths == 0) {
-                tenths = 1;
-            }
-            const double next = nextCelsius(*device.celsius, tenths / 10.0);
-            pendingReadings_.insert(device.id);
-            api_.setReading(device.id, next, now);
-        }
-    }
 }
 
 int SessionController::nextRoomPosition() const

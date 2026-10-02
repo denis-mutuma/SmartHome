@@ -52,8 +52,16 @@ Page {
             id: kindBox
             Layout.fillWidth: true
             visible: page.deviceId === ""
-            model: [qsTr("Light"), qsTr("Plug"), qsTr("Thermometer")]
+            model: [qsTr("Light"), qsTr("Plug")]
             Accessible.name: qsTr("Device kind")
+        }
+        Label {
+            text: qsTr("Sensor setup is unavailable until its telemetry contract is confirmed.")
+            color: Theme.muted
+            font.pixelSize: Theme.secondarySize
+            visible: page.deviceId === ""
+            wrapMode: Text.WordWrap
+            Layout.fillWidth: true
         }
         Label {
             text: page.session.statusMessage

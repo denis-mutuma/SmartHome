@@ -3,7 +3,6 @@
 #include "home_json.h"
 #include "home_rules.h"
 
-#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
@@ -210,13 +209,7 @@ void ApiClient::insertDevice(const QString& roomId, const QString& name, const Q
         {QStringLiteral("name"), name},
         {QStringLiteral("kind"), kind},
         {QStringLiteral("position"), position}};
-    if (kind == QLatin1String("thermometer")) {
-        body.insert(QStringLiteral("celsius"), 22.0);
-        body.insert(QStringLiteral("reading_at"),
-            QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
-    } else {
-        body.insert(QStringLiteral("is_on"), false);
-    }
+    body.insert(QStringLiteral("is_on"), false);
     send(QStringLiteral("device-insert"), "POST",
         QUrl(baseUrl_
             + QStringLiteral("/rest/v1/devices?select=id,room_id,name,kind,is_on,celsius,reading_at,position")),
@@ -230,19 +223,6 @@ void ApiClient::setDeviceOn(const QString& id, bool on)
     }
     const QJsonObject body{{QStringLiteral("is_on"), on}};
     send(QStringLiteral("device-on"), "PATCH",
-        QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id
-            + QStringLiteral("&select=id,room_id,name,kind,is_on,celsius,reading_at,position")),
-        objectJson(body), true, true, true);
-}
-
-void ApiClient::setReading(const QString& id, double celsius, const QDateTime& readingAt)
-{
-    if (!guardConfig(QStringLiteral("device-reading")) || !guardUuid(QStringLiteral("device-reading"), id)) {
-        return;
-    }
-    const QJsonObject body{{QStringLiteral("celsius"), celsius},
-        {QStringLiteral("reading_at"), readingAt.toUTC().toString(Qt::ISODateWithMs)}};
-    send(QStringLiteral("device-reading"), "PATCH",
         QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id
             + QStringLiteral("&select=id,room_id,name,kind,is_on,celsius,reading_at,position")),
         objectJson(body), true, true, true);
