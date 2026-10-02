@@ -22,6 +22,7 @@ void TokenStoreTest::roundTrip()
     QCOMPARE(loadRefreshToken(path), QStringLiteral("refresh-token-value"));
     QVERIFY(clearRefreshToken(path));
     QVERIFY(loadRefreshToken(path).isEmpty());
+    QVERIFY(saveRefreshToken(QStringLiteral("refresh-token-value"), path));
     QVERIFY(saveRefreshToken(QString(), path));
     QVERIFY(!QFile::exists(path));
 }

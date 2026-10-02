@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QStandardPaths>
 
 #ifdef Q_OS_WIN
@@ -21,11 +22,14 @@ bool writeBytes(const QString& filePath, const QByteArray& bytes)
     if (!QDir().mkpath(info.absolutePath())) {
         return false;
     }
-    QFile file(filePath);
+    QSaveFile file(filePath);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         return false;
     }
-    return file.write(bytes) == bytes.size();
+    if (file.write(bytes) != bytes.size()) {
+        return false;
+    }
+    return file.commit();
 }
 
 #ifdef Q_OS_WIN
