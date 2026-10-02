@@ -164,6 +164,9 @@ bool SessionController::createRoom(const QString& name)
         setStatus(QStringLiteral("Use 1 to 40 characters."));
         return false;
     }
+    if (!beginMutation(QStringLiteral("room-insert"))) {
+        return false;
+    }
     setStatus({});
     const int position = nextRoomPosition();
     authed([this, trimmed, position]() { api_.insertRoom(trimmed, position); });
@@ -177,6 +180,9 @@ bool SessionController::renameRoom(const QString& id, const QString& name)
         setStatus(QStringLiteral("Use 1 to 40 characters."));
         return false;
     }
+    if (!beginMutation(QStringLiteral("room-update"))) {
+        return false;
+    }
     setStatus({});
     authed([this, id, trimmed]() { api_.updateRoom(id, trimmed); });
     return true;
@@ -184,6 +190,9 @@ bool SessionController::renameRoom(const QString& id, const QString& name)
 
 void SessionController::deleteRoom(const QString& id)
 {
+    if (!beginMutation(QStringLiteral("room-delete"))) {
+        return;
+    }
     setStatus({});
     authed([this, id]() { api_.deleteRoom(id); });
 }
@@ -199,6 +208,9 @@ bool SessionController::createDevice(const QString& roomId, const QString& name,
         setStatus(QStringLiteral("The service could not complete the request."));
         return false;
     }
+    if (!beginMutation(QStringLiteral("device-insert"))) {
+        return false;
+    }
     setStatus({});
     const int position = nextDevicePosition(roomId);
     authed([this, roomId, trimmed, kind, position]() { api_.insertDevice(roomId, trimmed, kind, position); });
@@ -210,6 +222,9 @@ bool SessionController::renameDevice(const QString& id, const QString& name)
     const QString trimmed = name.trimmed();
     if (!isNameOk(trimmed)) {
         setStatus(QStringLiteral("Use 1 to 40 characters."));
+        return false;
+    }
+    if (!beginMutation(QStringLiteral("device-update"))) {
         return false;
     }
     setStatus({});
@@ -241,6 +256,9 @@ void SessionController::setDeviceOn(const QString& id, bool on)
 
 void SessionController::deleteDevice(const QString& id)
 {
+    if (!beginMutation(QStringLiteral("device-delete"))) {
+        return;
+    }
     setStatus({});
     authed([this, id]() { api_.deleteDevice(id); });
 }
@@ -255,6 +273,9 @@ bool SessionController::saveSettings(const QString& firstName, const QString& ci
     }
     if (!isCityOk(place)) {
         setStatus(QStringLiteral("Use at most 80 characters."));
+        return false;
+    }
+    if (!beginMutation(QStringLiteral("profile-update"))) {
         return false;
     }
     setStatus({});
@@ -284,7 +305,10 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int st
         const std::optional<ProfileRow> profile = parseProfile(body);
         if (profile.has_value()) {
             applyProfile(*profile);
+        } else if (op == QLatin1String("profile-update")) {
+            setStatus(QStringLiteral("The service could not complete the request."));
         }
+        finishMutation(op, profile.has_value());
         return;
     }
     if (op == QLatin1String("rooms")) {
@@ -325,6 +349,7 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int st
     }
     setStatus({});
     api_.fetchRooms();
+    finishMutation(op, true);
 }
 
 void SessionController::onFailed(const QString& op, quint64 requestId, int status, const QString& message)
@@ -368,6 +393,7 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
         return;
     }
     setStatus(message);
+    finishMutation(op, false);
 }
 
 void SessionController::applySession(const SessionTokens& session)
@@ -447,6 +473,9 @@ void SessionController::startRefresh()
 
 void SessionController::clearLocal()
 {
+    if (!pendingMutation_.isEmpty()) {
+        finishMutation(pendingMutation_, false);
+    }
     accessToken_.clear();
     refreshToken_.clear();
     api_.setAccessToken({});
@@ -469,6 +498,26 @@ void SessionController::clearLocal()
     emit roomsChanged();
     emit weatherChanged();
     emit greetingChanged();
+}
+
+bool SessionController::beginMutation(const QString& op)
+{
+    if (!pendingMutation_.isEmpty()) {
+        return false;
+    }
+    pendingMutation_ = op;
+    emit mutationStateChanged();
+    return true;
+}
+
+void SessionController::finishMutation(const QString& op, bool success)
+{
+    if (pendingMutation_ != op) {
+        return;
+    }
+    pendingMutation_.clear();
+    emit mutationStateChanged();
+    emit mutationFinished(op, success);
 }
 
 int SessionController::nextRoomPosition() const

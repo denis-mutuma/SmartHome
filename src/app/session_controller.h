@@ -18,6 +18,7 @@ class SessionController : public QObject
     Q_PROPERTY(QString city READ city NOTIFY profileChanged)
     Q_PROPERTY(QString greeting READ greeting NOTIFY greetingChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusChanged)
+    Q_PROPERTY(QString pendingMutation READ pendingMutation NOTIFY mutationStateChanged)
     Q_PROPERTY(QString weatherLine READ weatherLine NOTIFY weatherChanged)
     Q_PROPERTY(QString weatherIcon READ weatherIcon NOTIFY weatherChanged)
     Q_PROPERTY(QVariantList rooms READ rooms NOTIFY roomsChanged)
@@ -31,6 +32,7 @@ public:
     QString city() const { return city_; }
     QString greeting() const;
     QString statusMessage() const { return statusMessage_; }
+    QString pendingMutation() const { return pendingMutation_; }
     QString weatherLine() const { return weatherLine_; }
     QString weatherIcon() const;
     QVariantList rooms() const;
@@ -57,6 +59,8 @@ signals:
     void weatherChanged();
     void roomsChanged();
     void applicationActiveChanged();
+    void mutationStateChanged();
+    void mutationFinished(const QString& op, bool success);
 
 private:
     void onCompleted(const QString& op, quint64 requestId, int status, const QByteArray& body);
@@ -67,6 +71,8 @@ private:
     void startRefresh();
     void clearLocal();
     void setStatus(const QString& message);
+    bool beginMutation(const QString& op);
+    void finishMutation(const QString& op, bool success);
     bool requireFields(const QString& name, const QString& email, const QString& password, bool withName);
     int nextRoomPosition() const;
     int nextDevicePosition(const QString& roomId) const;
@@ -78,6 +84,7 @@ private:
     QString firstName_;
     QString city_;
     QString statusMessage_;
+    QString pendingMutation_;
     QString weatherLine_;
     QString weatherIconFile_;
     QList<RoomRow> rooms_;
