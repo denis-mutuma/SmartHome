@@ -10,6 +10,8 @@
 #include <QNetworkRequest>
 #include <QUrlQuery>
 
+#include <utility>
+
 namespace {
 
 constexpr int kTransferTimeoutMs = 15000;
@@ -40,10 +42,39 @@ void ApiClient::setAccessToken(const QString& token)
 void ApiClient::cancelPendingRequests()
 {
     ++requestGeneration_;
+    pendingRequests_.clear();
+    retryQueue_.clear();
     const QList<QNetworkReply*> replies = network_->findChildren<QNetworkReply*>();
     for (QNetworkReply* reply : replies) {
         reply->abort();
     }
+}
+
+bool ApiClient::queueRetry(quint64 requestId)
+{
+    auto request = pendingRequests_.find(requestId);
+    if (request == pendingRequests_.end() || !request->authorize || request->retries > 0) {
+        return false;
+    }
+    ++request->retries;
+    retryQueue_.append(requestId);
+    return true;
+}
+
+void ApiClient::retryQueuedRequests()
+{
+    const QList<quint64> requestIds = std::exchange(retryQueue_, {});
+    for (quint64 requestId : requestIds) {
+        if (pendingRequests_.contains(requestId)) {
+            sendPendingRequest(requestId);
+        }
+    }
+}
+
+void ApiClient::discardRequest(quint64 requestId)
+{
+    pendingRequests_.remove(requestId);
+    retryQueue_.removeAll(requestId);
 }
 
 bool ApiClient::guardConfig(const QString& op)
@@ -51,7 +82,7 @@ bool ApiClient::guardConfig(const QString& op)
     if (!baseUrl_.isEmpty() && !anonKey_.isEmpty()) {
         return true;
     }
-    emit failed(op, 0, QStringLiteral("Set the Supabase URL and anon key in config.local.cmake."));
+    emit failed(op, 0, 0, QStringLiteral("Set the Supabase URL and anon key in config.local.cmake."));
     return false;
 }
 
@@ -60,7 +91,7 @@ bool ApiClient::guardUuid(const QString& op, const QString& id)
     if (isUuid(id)) {
         return true;
     }
-    emit failed(op, 0, QStringLiteral("The service could not complete the request."));
+    emit failed(op, 0, 0, QStringLiteral("The service could not complete the request."));
     return false;
 }
 
@@ -83,12 +114,26 @@ QNetworkRequest ApiClient::makeRequest(const QUrl& url, bool authorize, bool rep
 
 void ApiClient::send(const QString& op, const QByteArray& method, const QUrl& url, const QByteArray& body, bool authorize, bool represent, bool includeKey)
 {
-    QNetworkRequest request = makeRequest(url, authorize, represent, includeKey);
-    QNetworkReply* reply = network_->sendCustomRequest(request, method, body);
-    reply->setProperty("op", op);
+    const quint64 requestId = ++nextRequestId_;
+    pendingRequests_.insert(requestId, {op, method, url, body, authorize, represent, includeKey});
+    sendPendingRequest(requestId);
+}
+
+void ApiClient::sendPendingRequest(quint64 requestId)
+{
+    const auto requestData = pendingRequests_.constFind(requestId);
+    if (requestData == pendingRequests_.cend()) {
+        return;
+    }
+    const PendingRequest pending = requestData.value();
+    QNetworkRequest request = makeRequest(pending.url, pending.authorize, pending.represent, pending.includeKey);
+    QNetworkReply* reply = network_->sendCustomRequest(request, pending.method, pending.body);
+    reply->setProperty("op", pending.op);
+    reply->setProperty("requestId", QVariant::fromValue(requestId));
     const quint64 requestGeneration = requestGeneration_;
     connect(reply, &QNetworkReply::finished, this, [this, reply, requestGeneration]() {
         const QString operation = reply->property("op").toString();
+        const quint64 requestId = reply->property("requestId").toULongLong();
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QByteArray payload = reply->readAll();
         const QNetworkReply::NetworkError error = reply->error();
@@ -98,16 +143,16 @@ void ApiClient::send(const QString& op, const QByteArray& method, const QUrl& ur
             return;
         }
         if (error != QNetworkReply::NoError && status == 0) {
-            emit failed(operation, status, errorString);
+            emit failed(operation, requestId, status, errorString);
             return;
         }
         if (status >= 400) {
             const QString parsed = parseErrorMessage(payload);
-            emit failed(operation, status,
+            emit failed(operation, requestId, status,
                 parsed.isEmpty() ? QStringLiteral("The service could not complete the request.") : parsed);
             return;
         }
-        emit completed(operation, status, payload);
+        emit completed(operation, requestId, status, payload);
     });
 }
 

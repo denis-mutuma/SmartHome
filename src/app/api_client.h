@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QHash>
 #include <QNetworkRequest>
 #include <QObject>
 #include <QString>
@@ -17,6 +18,9 @@ public:
 
     void setAccessToken(const QString& token);
     void cancelPendingRequests();
+    bool queueRetry(quint64 requestId);
+    void retryQueuedRequests();
+    void discardRequest(quint64 requestId);
 
     void signUp(const QString& email, const QString& password, const QString& firstName);
     void signIn(const QString& email, const QString& password);
@@ -38,12 +42,25 @@ public:
     void forecast(double latitude, double longitude);
 
 signals:
-    void completed(const QString& op, int status, const QByteArray& body);
-    void failed(const QString& op, int status, const QString& message);
+    void completed(const QString& op, quint64 requestId, int status, const QByteArray& body);
+    void failed(const QString& op, quint64 requestId, int status, const QString& message);
 
 private:
+    struct PendingRequest
+    {
+        QString op;
+        QByteArray method;
+        QUrl url;
+        QByteArray body;
+        bool authorize;
+        bool represent;
+        bool includeKey;
+        int retries = 0;
+    };
+
     QNetworkRequest makeRequest(const QUrl& url, bool authorize, bool represent, bool includeKey) const;
     void send(const QString& op, const QByteArray& method, const QUrl& url, const QByteArray& body, bool authorize, bool represent, bool includeKey);
+    void sendPendingRequest(quint64 requestId);
     bool guardConfig(const QString& op);
     bool guardUuid(const QString& op, const QString& id);
 
@@ -51,5 +68,8 @@ private:
     QString baseUrl_;
     QString anonKey_;
     QString accessToken_;
+    QHash<quint64, PendingRequest> pendingRequests_;
+    QList<quint64> retryQueue_;
+    quint64 nextRequestId_ = 0;
     quint64 requestGeneration_ = 0;
 };

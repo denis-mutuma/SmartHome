@@ -53,7 +53,7 @@ flowchart TB
 - New sensor creation is disabled in the client because the provisional migration requires a reading at insert time. The migration is not changed or treated as the target schema.
 - The migration constrains thermometer values and grants access based on the current user-token model. Neither rule is confirmed for the external writer or intended household sharing.
 - The app polls while active. There is no demonstrated live command delivery or reconnect protocol.
-- Shared retry state and callbacks that outlive sign-out can create stale or cross-request behavior. Mutation screens can dismiss before the service confirms success.
+- Per-request retry identity and sign-out cancellation now prevent the previously identified cross-request replay and late-reply cases. Mutation screens can still dismiss before the service confirms success.
 
 These are review findings against the prototype. Fixes that depend on the actual telemetry or hardware contract must wait for that contract rather than guessing new columns or policies.
 

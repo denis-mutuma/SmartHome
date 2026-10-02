@@ -59,8 +59,8 @@ signals:
     void applicationActiveChanged();
 
 private:
-    void onCompleted(const QString& op, int status, const QByteArray& body);
-    void onFailed(const QString& op, int status, const QString& message);
+    void onCompleted(const QString& op, quint64 requestId, int status, const QByteArray& body);
+    void onFailed(const QString& op, quint64 requestId, int status, const QString& message);
     void applySession(const SessionTokens& session);
     void applyProfile(const ProfileRow& profile);
     void authed(const std::function<void()>& call);
@@ -82,10 +82,8 @@ private:
     QString weatherIconFile_;
     QList<RoomRow> rooms_;
     QList<std::function<void()>> afterRefresh_;
-    std::function<void()> lastCall_;
     QString toggleRestoreId_;
     std::optional<bool> toggleRestoreOn_;
     bool signedIn_ = false;
     bool refreshRunning_ = false;
-    bool didRetry_ = false;
 };

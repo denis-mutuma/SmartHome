@@ -262,18 +262,17 @@ bool SessionController::saveSettings(const QString& firstName, const QString& ci
     return true;
 }
 
-void SessionController::onCompleted(const QString& op, int status, const QByteArray& body)
+void SessionController::onCompleted(const QString& op, quint64 requestId, int status, const QByteArray& body)
 {
+    api_.discardRequest(requestId);
     Q_UNUSED(status)
-    if (op != QLatin1String("refresh")) {
-        didRetry_ = false;
-    }
     if (op == QLatin1String("signup") || op == QLatin1String("login") || op == QLatin1String("refresh")) {
         const std::optional<SessionTokens> session = parseSession(body);
         if (!session.has_value()) {
             setStatus(QStringLiteral("The service could not complete the request."));
             if (op == QLatin1String("refresh")) {
                 refreshRunning_ = false;
+                api_.cancelPendingRequests();
                 clearLocal();
             }
             return;
@@ -328,8 +327,15 @@ void SessionController::onCompleted(const QString& op, int status, const QByteAr
     api_.fetchRooms();
 }
 
-void SessionController::onFailed(const QString& op, int status, const QString& message)
+void SessionController::onFailed(const QString& op, quint64 requestId, int status, const QString& message)
 {
+    if (status == 401 && op != QLatin1String("login") && op != QLatin1String("signup")
+        && op != QLatin1String("refresh") && op != QLatin1String("logout")
+        && api_.queueRetry(requestId)) {
+        startRefresh();
+        return;
+    }
+    api_.discardRequest(requestId);
     if (op == QLatin1String("forecast")) {
         return;
     }
@@ -343,19 +349,11 @@ void SessionController::onFailed(const QString& op, int status, const QString& m
     if (op == QLatin1String("refresh")) {
         refreshRunning_ = false;
         afterRefresh_.clear();
+        api_.cancelPendingRequests();
         clearLocal();
         setStatus(message);
         return;
     }
-    if (status == 401 && !didRetry_ && op != QLatin1String("login") && op != QLatin1String("signup")) {
-        didRetry_ = true;
-        if (lastCall_) {
-            afterRefresh_.append(lastCall_);
-        }
-        startRefresh();
-        return;
-    }
-    didRetry_ = false;
     if (op == QLatin1String("device-on") && !toggleRestoreId_.isEmpty()) {
         for (RoomRow& room : rooms_) {
             for (DeviceRow& device : room.devices) {
@@ -380,6 +378,7 @@ void SessionController::applySession(const SessionTokens& session)
     userId_ = session.userId;
     saveRefreshToken(refreshToken_, sessionFilePath());
     refreshRunning_ = false;
+    api_.retryQueuedRequests();
     if (!signedIn_) {
         signedIn_ = true;
         emit signedInChanged();
@@ -420,7 +419,6 @@ void SessionController::applyProfile(const ProfileRow& profile)
 
 void SessionController::authed(const std::function<void()>& call)
 {
-    lastCall_ = call;
     const QDateTime expiry = jwtExpiryUtc(accessToken_);
     const bool due = accessToken_.isEmpty() || !expiry.isValid()
         || expiry <= QDateTime::currentDateTimeUtc().addSecs(60);
@@ -438,6 +436,7 @@ void SessionController::startRefresh()
         return;
     }
     if (refreshToken_.isEmpty()) {
+        api_.cancelPendingRequests();
         clearLocal();
         setStatus(QStringLiteral("The service could not complete the request."));
         return;
@@ -457,7 +456,6 @@ void SessionController::clearLocal()
     city_.clear();
     rooms_.clear();
     afterRefresh_.clear();
-    lastCall_ = nullptr;
     weatherLine_.clear();
     weatherIconFile_.clear();
     toggleRestoreId_.clear();
