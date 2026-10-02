@@ -194,7 +194,7 @@ bool SessionController::createDevice(const QString& roomId, const QString& name,
         setStatus(QStringLiteral("Use 1 to 40 characters."));
         return false;
     }
-    if (kind != QLatin1String("light") && kind != QLatin1String("plug")) {
+    if (!isDeviceKindCreatable(kind)) {
         setStatus(QStringLiteral("The service could not complete the request."));
         return false;
     }

@@ -2,9 +2,6 @@
 
 #include <QRegularExpression>
 
-#include <algorithm>
-#include <cmath>
-
 QString greetingFor(QTime time)
 {
     const int minutes = time.hour() * 60 + time.minute();
@@ -20,23 +17,9 @@ QString greetingFor(QTime time)
     return QStringLiteral("Good night,");
 }
 
-double clampCelsius(double value)
+bool isDeviceKindCreatable(const QString& kind)
 {
-    const double clamped = std::clamp(value, 18.0, 28.0);
-    return std::round(clamped * 10.0) / 10.0;
-}
-
-double nextCelsius(double current, double delta)
-{
-    return clampCelsius(current + delta);
-}
-
-bool readingIsStale(const QDateTime& readingAt, const QDateTime& now)
-{
-    if (!readingAt.isValid() || !now.isValid()) {
-        return true;
-    }
-    return readingAt.secsTo(now) >= 15 * 60;
+    return kind == QLatin1String("light") || kind == QLatin1String("plug");
 }
 
 bool isUuid(const QString& value)

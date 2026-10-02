@@ -8,8 +8,7 @@ class HomeRulesTest : public QObject
 
 private slots:
     void greetingBands();
-    void celsiusClamp();
-    void staleReading();
+    void deviceCreationKinds();
     void fieldLimits();
 };
 
@@ -26,22 +25,12 @@ void HomeRulesTest::greetingBands()
     QCOMPARE(greetingFor(QTime(0, 0)), QStringLiteral("Good night,"));
 }
 
-void HomeRulesTest::celsiusClamp()
+void HomeRulesTest::deviceCreationKinds()
 {
-    QCOMPARE(clampCelsius(17.9), 18.0);
-    QCOMPARE(clampCelsius(28.1), 28.0);
-    QCOMPARE(clampCelsius(22.04), 22.0);
-    QCOMPARE(clampCelsius(22.05), 22.1);
-    QCOMPARE(nextCelsius(28.0, 0.2), 28.0);
-    QCOMPARE(nextCelsius(18.0, -0.2), 18.0);
-}
-
-void HomeRulesTest::staleReading()
-{
-    const QDateTime now = QDateTime::fromString(QStringLiteral("2026-09-29T12:00:00Z"), Qt::ISODate);
-    QVERIFY(readingIsStale(QDateTime(), now));
-    QVERIFY(readingIsStale(now.addSecs(-15 * 60), now));
-    QVERIFY(!readingIsStale(now.addSecs(-(15 * 60 - 1)), now));
+    QVERIFY(isDeviceKindCreatable(QStringLiteral("light")));
+    QVERIFY(isDeviceKindCreatable(QStringLiteral("plug")));
+    QVERIFY(!isDeviceKindCreatable(QStringLiteral("thermometer")));
+    QVERIFY(!isDeviceKindCreatable(QStringLiteral("unknown")));
 }
 
 void HomeRulesTest::fieldLimits()
