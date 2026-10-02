@@ -46,102 +46,110 @@ Page {
         }
     }
 
-    ColumnLayout {
+    ScrollView {
+        id: roomContent
         anchors.fill: parent
-        anchors.margins: 16
-        spacing: 12
+        padding: 16
+        contentWidth: availableWidth
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-        Label {
-            text: page.session.statusMessage
-            color: Theme.danger
-            font.pixelSize: Theme.secondarySize
-            visible: text.length > 0
-            wrapMode: Text.WordWrap
-            Layout.fillWidth: true
-        }
+        ColumnLayout {
+            width: roomContent.availableWidth
+            spacing: 12
 
-        Repeater {
-            model: page.room ? page.room.devices : []
-            delegate: Rectangle {
-                id: deviceCard
-                required property var modelData
+            Label {
+                text: page.session.statusMessage
+                color: Theme.danger
+                font.pixelSize: Theme.secondarySize
+                visible: text.length > 0
+                wrapMode: Text.WordWrap
                 Layout.fillWidth: true
-                implicitHeight: 72
-                radius: 12
-                color: Theme.card
+            }
 
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 12
-                    Image {
-                        source: {
-                            if (deviceCard.modelData.kind === "plug")
-                                return "qrc:/qt/qml/SmartHome/assets/icons/plug.svg"
-                            if (deviceCard.modelData.kind === "thermometer")
-                                return "qrc:/qt/qml/SmartHome/assets/icons/thermometer.svg"
-                            return deviceCard.modelData.isOn === true
-                                    ? "qrc:/qt/qml/SmartHome/assets/icons/light-on.svg"
-                                    : "qrc:/qt/qml/SmartHome/assets/icons/light-off.svg"
-                        }
-                        sourceSize.width: 24
-                        sourceSize.height: 24
-                        Accessible.name: deviceCard.modelData.kind
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        Label {
-                            text: deviceCard.modelData.name
-                            color: Theme.text
-                            font.pixelSize: Theme.labelSize
-                        }
-                        Label {
-                            text: deviceCard.modelData.kind === "thermometer"
-                                  ? qsTr("%1°C").arg(Number(deviceCard.modelData.celsius).toFixed(1))
-                                  : (deviceCard.modelData.isOn === true ? qsTr("On") : qsTr("Off"))
-                            color: Theme.muted
-                            font.pixelSize: Theme.secondarySize
-                        }
-                    }
-                    AbstractButton {
-                        visible: deviceCard.modelData.kind !== "thermometer"
-                        enabled: page.session.pendingMutation === ""
-                        Accessible.name: deviceCard.modelData.isOn === true ? qsTr("Turn off") : qsTr("Turn on")
-                        implicitWidth: 48
-                        implicitHeight: 24
-                        onClicked: page.session.setDeviceOn(deviceCard.modelData.id, deviceCard.modelData.isOn !== true)
-                        contentItem: Image {
-                            source: deviceCard.modelData.isOn === true
-                                    ? "qrc:/qt/qml/SmartHome/assets/icons/toggle-on.svg"
-                                    : "qrc:/qt/qml/SmartHome/assets/icons/toggle-off.svg"
-                            sourceSize.width: 48
+            Repeater {
+                model: page.room ? page.room.devices : []
+                delegate: Rectangle {
+                    id: deviceCard
+                    required property var modelData
+                    Layout.fillWidth: true
+                    implicitHeight: 72
+                    radius: 12
+                    color: Theme.card
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        spacing: 12
+                        Image {
+                            source: {
+                                if (deviceCard.modelData.kind === "plug")
+                                    return "qrc:/qt/qml/SmartHome/assets/icons/plug.svg"
+                                if (deviceCard.modelData.kind === "thermometer")
+                                    return "qrc:/qt/qml/SmartHome/assets/icons/thermometer.svg"
+                                return deviceCard.modelData.isOn === true
+                                        ? "qrc:/qt/qml/SmartHome/assets/icons/light-on.svg"
+                                        : "qrc:/qt/qml/SmartHome/assets/icons/light-off.svg"
+                            }
+                            sourceSize.width: 24
                             sourceSize.height: 24
+                            Accessible.name: deviceCard.modelData.kind
                         }
-                    }
-                    ActionButton {
-                        text: qsTr("Edit")
-                        fill: Theme.background
-                        onClicked: page.editDevice(deviceCard.modelData.id, deviceCard.modelData.name, deviceCard.modelData.kind)
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Label {
+                                text: deviceCard.modelData.name
+                                color: Theme.text
+                                font.pixelSize: Theme.labelSize
+                            }
+                            Label {
+                                text: deviceCard.modelData.kind === "thermometer"
+                                      ? qsTr("%1°C").arg(Number(deviceCard.modelData.celsius).toFixed(1))
+                                      : (deviceCard.modelData.isOn === true ? qsTr("On") : qsTr("Off"))
+                                color: Theme.muted
+                                font.pixelSize: Theme.secondarySize
+                            }
+                        }
+                        AbstractButton {
+                            visible: deviceCard.modelData.kind !== "thermometer"
+                            enabled: page.session.pendingMutation === ""
+                            Accessible.name: deviceCard.modelData.isOn === true ? qsTr("Turn off") : qsTr("Turn on")
+                            implicitWidth: 48
+                            implicitHeight: 24
+                            onClicked: page.session.setDeviceOn(deviceCard.modelData.id, deviceCard.modelData.isOn !== true)
+                            contentItem: Image {
+                                source: deviceCard.modelData.isOn === true
+                                        ? "qrc:/qt/qml/SmartHome/assets/icons/toggle-on.svg"
+                                        : "qrc:/qt/qml/SmartHome/assets/icons/toggle-off.svg"
+                                sourceSize.width: 48
+                                sourceSize.height: 24
+                            }
+                        }
+                        ActionButton {
+                            text: qsTr("Edit")
+                            fill: Theme.background
+                            enabled: page.session.pendingMutation === ""
+                            onClicked: page.editDevice(deviceCard.modelData.id, deviceCard.modelData.name, deviceCard.modelData.kind)
+                        }
                     }
                 }
             }
-        }
 
-        ActionButton {
-            text: qsTr("Add device")
-            Layout.fillWidth: true
-            enabled: page.session.pendingMutation === ""
-            onClicked: page.addDevice()
+            ActionButton {
+                text: qsTr("Add device")
+                Layout.fillWidth: true
+                enabled: page.session.pendingMutation === ""
+                onClicked: page.addDevice()
+            }
+            ActionButton {
+                text: qsTr("Delete room")
+                fill: Theme.card
+                labelColor: Theme.danger
+                Layout.fillWidth: true
+                enabled: page.session.pendingMutation === ""
+                onClicked: deleteDialog.open()
+            }
+            Item { Layout.fillHeight: true }
         }
-        ActionButton {
-            text: qsTr("Delete room")
-            fill: Theme.card
-            labelColor: Theme.danger
-            Layout.fillWidth: true
-            enabled: page.session.pendingMutation === ""
-            onClicked: deleteDialog.open()
-        }
-        Item { Layout.fillHeight: true }
     }
 
     Dialog {
