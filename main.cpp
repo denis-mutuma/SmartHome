@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
     app.setOrganizationDomain("https://github.com/denis-mutuma");
     app.setApplicationName("SmartHome");
     app.setApplicationVersion("1.0.0");
-    app.setWindowIcon(QIcon("assets/images/mutuma.jpg"));
+    app.setWindowIcon(QIcon(QStringLiteral(":/qt/qml/SmartHome/assets/images/mutuma.jpg")));
     app.setApplicationDisplayName("SmartHome");
 
     QQmlApplicationEngine engine;
