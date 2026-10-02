@@ -57,6 +57,13 @@ smarthome_add_test(tst_token_store tests/tst_token_store.cpp)
 smarthome_add_test(tst_api_client tests/tst_api_client.cpp)
 target_sources(tst_api_client PRIVATE src/app/api_client.cpp)
 target_link_libraries(tst_api_client PRIVATE Qt6::Network)
+smarthome_add_test(tst_session_controller tests/tst_session_controller.cpp)
+target_sources(tst_session_controller PRIVATE src/app/api_client.cpp src/app/session_controller.cpp)
+target_link_libraries(tst_session_controller PRIVATE Qt6::Quick Qt6::Network)
+target_compile_definitions(tst_session_controller PRIVATE
+    "SMARTHOME_SUPABASE_URL=\"\""
+    "SMARTHOME_SUPABASE_ANON_KEY=\"\""
+)
 
 if(NOT DEFINED SMARTHOME_SUPABASE_URL)
     set(SMARTHOME_SUPABASE_URL "")
