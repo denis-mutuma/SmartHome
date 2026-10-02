@@ -5,6 +5,8 @@
 
 #include <QDateTime>
 #include <QGuiApplication>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QTime>
 
 #include <algorithm>
@@ -22,6 +24,12 @@ QVariantMap deviceMap(const DeviceRow& device)
     map.insert(QStringLiteral("celsius"), device.celsius.has_value() ? QVariant(*device.celsius) : QVariant());
     map.insert(QStringLiteral("position"), device.position);
     return map;
+}
+
+bool mutationHasReturnedRow(const QByteArray& body)
+{
+    const QJsonDocument response = QJsonDocument::fromJson(body);
+    return response.isArray() && !response.array().isEmpty() && response.array().first().isObject();
 }
 
 } // namespace
@@ -357,12 +365,20 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int st
         emit weatherChanged();
         return;
     }
-    if (op == QLatin1String("device-on")) {
-        toggleRestoreId_.clear();
-        finishMutation(op, true);
-    }
     if (op == QLatin1String("logout")) {
         return;
+    }
+    if ((op == QLatin1String("room-insert") || op == QLatin1String("room-update")
+            || op == QLatin1String("room-delete") || op == QLatin1String("device-insert")
+            || op == QLatin1String("device-on") || op == QLatin1String("device-update")
+            || op == QLatin1String("device-delete"))
+        && !mutationHasReturnedRow(body)) {
+        setStatus(QStringLiteral("The service could not complete the request."));
+        finishMutation(op, false);
+        return;
+    }
+    if (op == QLatin1String("device-on")) {
+        toggleRestoreId_.clear();
     }
     setStatus({});
     api_.fetchRooms();

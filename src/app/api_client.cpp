@@ -256,7 +256,8 @@ void ApiClient::deleteRoom(const QString& id)
         return;
     }
     send(QStringLiteral("room-delete"), "DELETE",
-        QUrl(baseUrl_ + QStringLiteral("/rest/v1/rooms?id=eq.") + id), QByteArray(), true, false, true);
+        QUrl(baseUrl_ + QStringLiteral("/rest/v1/rooms?id=eq.") + id + QStringLiteral("&select=id")),
+        QByteArray(), true, true, true);
 }
 
 void ApiClient::insertDevice(const QString& roomId, const QString& name, const QString& kind, int position)
@@ -305,7 +306,8 @@ void ApiClient::deleteDevice(const QString& id)
         return;
     }
     send(QStringLiteral("device-delete"), "DELETE",
-        QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id), QByteArray(), true, false, true);
+        QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id + QStringLiteral("&select=id")),
+        QByteArray(), true, true, true);
 }
 
 void ApiClient::geocode(const QString& city)
