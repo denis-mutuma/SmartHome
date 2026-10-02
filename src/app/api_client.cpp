@@ -151,7 +151,8 @@ void ApiClient::updateProfile(const QString& userId, const QString& firstName, c
     if (!guardConfig(QStringLiteral("profile-update")) || !guardUuid(QStringLiteral("profile-update"), userId)) {
         return;
     }
-    const QJsonObject body{{QStringLiteral("first_name"), firstName}, {QStringLiteral("city"), city}};
+    const QJsonValue cityValue = city.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(city);
+    const QJsonObject body{{QStringLiteral("first_name"), firstName}, {QStringLiteral("city"), cityValue}};
     send(QStringLiteral("profile-update"), "PATCH",
         QUrl(baseUrl_ + QStringLiteral("/rest/v1/profiles?id=eq.") + userId + QStringLiteral("&select=id,first_name,city")),
         objectJson(body), true, true, true);
