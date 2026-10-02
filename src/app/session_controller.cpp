@@ -134,6 +134,7 @@ bool SessionController::signIn(const QString& email, const QString& password)
     if (!requireFields(QString(), normalized, password, false)) {
         return false;
     }
+    cancelPendingAuth();
     setStatus({});
     api_.signIn(normalized, password);
     return true;
@@ -146,6 +147,7 @@ bool SessionController::registerAccount(const QString& firstName, const QString&
     if (!requireFields(name, normalized, password, true)) {
         return false;
     }
+    cancelPendingAuth();
     setStatus({});
     api_.signUp(normalized, password, name);
     return true;
@@ -157,8 +159,11 @@ void SessionController::signOut()
     if (!accessToken_.isEmpty()) {
         api_.logOut();
     }
-    clearLocal();
-    setStatus({});
+    if (clearLocal()) {
+        setStatus({});
+    } else {
+        setStatus(QStringLiteral("Could not remove the saved session. It may still be usable on this device."));
+    }
 }
 
 void SessionController::reload()
@@ -409,8 +414,9 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
             refreshRunning_ = false;
             afterRefresh_.clear();
             api_.cancelPendingRequests();
-            clearLocal();
-            setStatus(message);
+            setStatus(clearLocal()
+                    ? message
+                    : message + QStringLiteral(" The saved session could not be removed from this device."));
             return;
         }
         failRefresh(message);
@@ -503,6 +509,13 @@ void SessionController::startRefresh()
     api_.refresh(refreshToken_);
 }
 
+void SessionController::cancelPendingAuth()
+{
+    api_.cancelPendingRequests();
+    afterRefresh_.clear();
+    refreshRunning_ = false;
+}
+
 void SessionController::failRefresh(const QString& message)
 {
     refreshRunning_ = false;
@@ -540,13 +553,13 @@ void SessionController::rollbackDeviceToggle()
     emit roomsChanged();
 }
 
-void SessionController::clearLocal()
+bool SessionController::clearLocal()
 {
     failPendingMutation();
     accessToken_.clear();
     refreshToken_.clear();
     api_.setAccessToken({});
-    clearRefreshToken(tokenFilePath_);
+    const bool tokenRemoved = clearRefreshToken(tokenFilePath_);
     userId_.clear();
     firstName_.clear();
     city_.clear();
@@ -565,6 +578,7 @@ void SessionController::clearLocal()
     emit roomsChanged();
     emit weatherChanged();
     emit greetingChanged();
+    return tokenRemoved;
 }
 
 bool SessionController::beginMutation(const QString& op)

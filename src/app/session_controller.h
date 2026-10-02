@@ -70,11 +70,12 @@ private:
     void applySession(const SessionTokens& session);
     void applyProfile(const ProfileRow& profile);
     void authed(const std::function<void()>& call);
+    void cancelPendingAuth();
     void startRefresh();
     void failRefresh(const QString& message);
     void failPendingMutation();
     void rollbackDeviceToggle();
-    void clearLocal();
+    bool clearLocal();
     void setStatus(const QString& message);
     bool beginMutation(const QString& op);
     void finishMutation(const QString& op, bool success);
