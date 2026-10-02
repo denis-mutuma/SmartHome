@@ -416,7 +416,9 @@ void SessionController::applySession(const SessionTokens& session)
     api_.setAccessToken(accessToken_);
     refreshToken_ = session.refreshToken;
     userId_ = session.userId;
-    saveRefreshToken(refreshToken_, tokenFilePath_);
+    if (!saveRefreshToken(refreshToken_, tokenFilePath_)) {
+        setStatus(QStringLiteral("Session active, but it couldn't be saved. You may need to sign in again after closing the app."));
+    }
     refreshRunning_ = false;
     api_.retryQueuedRequests();
     if (!signedIn_) {
