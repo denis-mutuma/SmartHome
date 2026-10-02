@@ -241,11 +241,21 @@ void SessionController::setDeviceOn(const QString& id, bool on)
                 continue;
             }
             previous = device.isOn;
-            device.isOn = on;
+            break;
+        }
+        if (previous.has_value()) {
+            break;
         }
     }
-    if (!previous.has_value()) {
+    if (!previous.has_value() || !beginMutation(QStringLiteral("device-on"))) {
         return;
+    }
+    for (RoomRow& room : rooms_) {
+        for (DeviceRow& device : room.devices) {
+            if (device.id == id) {
+                device.isOn = on;
+            }
+        }
     }
     emit roomsChanged();
     setStatus({});
@@ -343,6 +353,7 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int st
     }
     if (op == QLatin1String("device-on")) {
         toggleRestoreId_.clear();
+        finishMutation(op, true);
     }
     if (op == QLatin1String("logout")) {
         return;
@@ -390,6 +401,7 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
         toggleRestoreId_.clear();
         emit roomsChanged();
         setStatus(QStringLiteral("Couldn't update the device."));
+        finishMutation(op, false);
         return;
     }
     setStatus(message);

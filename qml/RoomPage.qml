@@ -105,6 +105,7 @@ Page {
                     }
                     AbstractButton {
                         visible: deviceCard.modelData.kind !== "thermometer"
+                        enabled: page.session.pendingMutation === ""
                         Accessible.name: deviceCard.modelData.isOn === true ? qsTr("Turn off") : qsTr("Turn on")
                         implicitWidth: 48
                         implicitHeight: 24
