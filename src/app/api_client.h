@@ -16,6 +16,7 @@ public:
     ApiClient(QString baseUrl, QString anonKey, QObject* parent = nullptr);
 
     void setAccessToken(const QString& token);
+    void cancelPendingRequests();
 
     void signUp(const QString& email, const QString& password, const QString& firstName);
     void signIn(const QString& email, const QString& password);
@@ -50,4 +51,5 @@ private:
     QString baseUrl_;
     QString anonKey_;
     QString accessToken_;
+    quint64 requestGeneration_ = 0;
 };

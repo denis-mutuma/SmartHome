@@ -37,6 +37,15 @@ void ApiClient::setAccessToken(const QString& token)
     accessToken_ = token;
 }
 
+void ApiClient::cancelPendingRequests()
+{
+    ++requestGeneration_;
+    const QList<QNetworkReply*> replies = network_->findChildren<QNetworkReply*>();
+    for (QNetworkReply* reply : replies) {
+        reply->abort();
+    }
+}
+
 bool ApiClient::guardConfig(const QString& op)
 {
     if (!baseUrl_.isEmpty() && !anonKey_.isEmpty()) {
@@ -77,13 +86,17 @@ void ApiClient::send(const QString& op, const QByteArray& method, const QUrl& ur
     QNetworkRequest request = makeRequest(url, authorize, represent, includeKey);
     QNetworkReply* reply = network_->sendCustomRequest(request, method, body);
     reply->setProperty("op", op);
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    const quint64 requestGeneration = requestGeneration_;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, requestGeneration]() {
         const QString operation = reply->property("op").toString();
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QByteArray payload = reply->readAll();
         const QNetworkReply::NetworkError error = reply->error();
         const QString errorString = reply->errorString();
         reply->deleteLater();
+        if (requestGeneration != requestGeneration_) {
+            return;
+        }
         if (error != QNetworkReply::NoError && status == 0) {
             emit failed(operation, status, errorString);
             return;

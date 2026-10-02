@@ -137,6 +137,7 @@ bool SessionController::registerAccount(const QString& firstName, const QString&
 
 void SessionController::signOut()
 {
+    api_.cancelPendingRequests();
     if (!accessToken_.isEmpty()) {
         api_.logOut();
     }
