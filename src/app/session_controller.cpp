@@ -27,8 +27,16 @@ QVariantMap deviceMap(const DeviceRow& device)
 } // namespace
 
 SessionController::SessionController(QObject* parent)
+    : SessionController(QStringLiteral(SMARTHOME_SUPABASE_URL), QStringLiteral(SMARTHOME_SUPABASE_ANON_KEY),
+          sessionFilePath(), parent)
+{
+}
+
+SessionController::SessionController(const QString& apiBaseUrl, const QString& anonKey,
+    const QString& tokenFilePath, QObject* parent)
     : QObject(parent)
-    , api_(QStringLiteral(SMARTHOME_SUPABASE_URL), QStringLiteral(SMARTHOME_SUPABASE_ANON_KEY), this)
+    , api_(apiBaseUrl, anonKey, this)
+    , tokenFilePath_(tokenFilePath)
 {
     connect(&api_, &ApiClient::completed, this, &SessionController::onCompleted);
     connect(&api_, &ApiClient::failed, this, &SessionController::onFailed);
@@ -36,11 +44,11 @@ SessionController::SessionController(QObject* parent)
         emit applicationActiveChanged();
     });
 
-    if (QStringLiteral(SMARTHOME_SUPABASE_URL).isEmpty() || QStringLiteral(SMARTHOME_SUPABASE_ANON_KEY).isEmpty()) {
+    if (apiBaseUrl.isEmpty() || anonKey.isEmpty()) {
         setStatus(QStringLiteral("Set the Supabase URL and anon key in config.local.cmake."));
         return;
     }
-    refreshToken_ = loadRefreshToken(sessionFilePath());
+    refreshToken_ = loadRefreshToken(tokenFilePath_);
     if (!refreshToken_.isEmpty()) {
         startRefresh();
     }
@@ -302,9 +310,7 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int st
         if (!session.has_value()) {
             setStatus(QStringLiteral("The service could not complete the request."));
             if (op == QLatin1String("refresh")) {
-                refreshRunning_ = false;
-                api_.cancelPendingRequests();
-                clearLocal();
+                failRefresh(QStringLiteral("The service could not complete the request."));
             }
             return;
         }
@@ -383,23 +389,19 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
         return;
     }
     if (op == QLatin1String("refresh")) {
-        refreshRunning_ = false;
-        afterRefresh_.clear();
-        api_.cancelPendingRequests();
-        clearLocal();
-        setStatus(message);
+        if (status == 400 || status == 401) {
+            refreshRunning_ = false;
+            afterRefresh_.clear();
+            api_.cancelPendingRequests();
+            clearLocal();
+            setStatus(message);
+            return;
+        }
+        failRefresh(message);
         return;
     }
     if (op == QLatin1String("device-on") && !toggleRestoreId_.isEmpty()) {
-        for (RoomRow& room : rooms_) {
-            for (DeviceRow& device : room.devices) {
-                if (device.id == toggleRestoreId_) {
-                    device.isOn = toggleRestoreOn_;
-                }
-            }
-        }
-        toggleRestoreId_.clear();
-        emit roomsChanged();
+        rollbackDeviceToggle();
         setStatus(QStringLiteral("Couldn't update the device."));
         finishMutation(op, false);
         return;
@@ -414,7 +416,7 @@ void SessionController::applySession(const SessionTokens& session)
     api_.setAccessToken(accessToken_);
     refreshToken_ = session.refreshToken;
     userId_ = session.userId;
-    saveRefreshToken(refreshToken_, sessionFilePath());
+    saveRefreshToken(refreshToken_, tokenFilePath_);
     refreshRunning_ = false;
     api_.retryQueuedRequests();
     if (!signedIn_) {
@@ -483,15 +485,50 @@ void SessionController::startRefresh()
     api_.refresh(refreshToken_);
 }
 
+void SessionController::failRefresh(const QString& message)
+{
+    refreshRunning_ = false;
+    afterRefresh_.clear();
+    api_.cancelPendingRequests();
+    failPendingMutation();
+    setStatus(message);
+}
+
+void SessionController::failPendingMutation()
+{
+    const QString op = pendingMutation_;
+    if (op.isEmpty()) {
+        return;
+    }
+    if (op == QLatin1String("device-on")) {
+        rollbackDeviceToggle();
+    }
+    finishMutation(op, false);
+}
+
+void SessionController::rollbackDeviceToggle()
+{
+    if (toggleRestoreId_.isEmpty()) {
+        return;
+    }
+    for (RoomRow& room : rooms_) {
+        for (DeviceRow& device : room.devices) {
+            if (device.id == toggleRestoreId_) {
+                device.isOn = toggleRestoreOn_;
+            }
+        }
+    }
+    toggleRestoreId_.clear();
+    emit roomsChanged();
+}
+
 void SessionController::clearLocal()
 {
-    if (!pendingMutation_.isEmpty()) {
-        finishMutation(pendingMutation_, false);
-    }
+    failPendingMutation();
     accessToken_.clear();
     refreshToken_.clear();
     api_.setAccessToken({});
-    clearRefreshToken(sessionFilePath());
+    clearRefreshToken(tokenFilePath_);
     userId_.clear();
     firstName_.clear();
     city_.clear();

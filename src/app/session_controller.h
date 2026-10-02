@@ -26,6 +26,8 @@ class SessionController : public QObject
 
 public:
     explicit SessionController(QObject* parent = nullptr);
+    SessionController(const QString& apiBaseUrl, const QString& anonKey, const QString& tokenFilePath,
+        QObject* parent = nullptr);
 
     bool signedIn() const { return signedIn_; }
     QString firstName() const { return firstName_; }
@@ -69,6 +71,9 @@ private:
     void applyProfile(const ProfileRow& profile);
     void authed(const std::function<void()>& call);
     void startRefresh();
+    void failRefresh(const QString& message);
+    void failPendingMutation();
+    void rollbackDeviceToggle();
     void clearLocal();
     void setStatus(const QString& message);
     bool beginMutation(const QString& op);
@@ -80,6 +85,7 @@ private:
     ApiClient api_;
     QString accessToken_;
     QString refreshToken_;
+    QString tokenFilePath_;
     QString userId_;
     QString firstName_;
     QString city_;
