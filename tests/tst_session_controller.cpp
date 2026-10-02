@@ -17,6 +17,7 @@ private slots:
     void refreshNetworkFailureKeepsSavedToken();
     void rejectedRefreshTokenIsCleared();
     void tokenPersistenceFailureKeepsSessionWithWarning();
+    void emptyMutationResultIsNotSuccess();
 };
 
 void SessionControllerTest::refreshNetworkFailureKeepsSavedToken()
@@ -109,6 +110,65 @@ void SessionControllerTest::tokenPersistenceFailureKeepsSessionWithWarning()
     QTRY_VERIFY(controller.signedIn());
     QVERIFY(controller.statusMessage().contains(QStringLiteral("couldn't be saved")));
     QVERIFY(!QFile::exists(tokenPath));
+}
+
+void SessionControllerTest::emptyMutationResultIsNotSuccess()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    const QByteArray sessionBody = QByteArrayLiteral(
+        "{\"access_token\":\"access\",\"refresh_token\":\"refresh\","
+        "\"user\":{\"id\":\"123e4567-e89b-12d3-a456-426614174000\"}}");
+    const QByteArray profileBody = QByteArrayLiteral(
+        "[{\"id\":\"123e4567-e89b-12d3-a456-426614174000\",\"first_name\":\"Amina\",\"city\":null}]");
+    int roomInsertCount = 0;
+    connect(&server, &QTcpServer::newConnection, &server, [&server, sessionBody, profileBody, &roomInsertCount]() {
+        QTcpSocket* socket = server.nextPendingConnection();
+        connect(socket, &QTcpSocket::readyRead, socket, [socket, sessionBody, profileBody, &roomInsertCount]() {
+            QByteArray request = socket->property("request").toByteArray();
+            request.append(socket->readAll());
+            socket->setProperty("request", request);
+            const qsizetype headerEnd = request.indexOf(QByteArrayLiteral("\r\n\r\n"));
+            if (headerEnd < 0 || socket->property("replied").toBool()) {
+                return;
+            }
+            const QList<QByteArray> requestLine = request.left(headerEnd).split('\n').first().trimmed().split(' ');
+            if (requestLine.size() < 2) {
+                return;
+            }
+            const QByteArray method = requestLine.at(0);
+            const QByteArray path = requestLine.at(1);
+            QByteArray body = QByteArrayLiteral("[]");
+            int status = 200;
+            if (path.startsWith(QByteArrayLiteral("/auth/v1/token?"))) {
+                body = sessionBody;
+            } else if (path.startsWith(QByteArrayLiteral("/rest/v1/profiles?"))) {
+                body = profileBody;
+            } else if (path.startsWith(QByteArrayLiteral("/rest/v1/rooms?")) && method == "POST") {
+                ++roomInsertCount;
+                status = 201;
+            }
+            socket->setProperty("replied", true);
+            socket->write(QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(status)
+                + QByteArrayLiteral(" OK\r\nContent-Length: ") + QByteArray::number(body.size())
+                + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + body);
+        });
+    });
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("anon"), directory.filePath(QStringLiteral("session.bin")));
+    QSignalSpy mutationFinished(&controller, &SessionController::mutationFinished);
+    QVERIFY(mutationFinished.isValid());
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("password123")));
+    QTRY_VERIFY(controller.signedIn());
+    QVERIFY(controller.createRoom(QStringLiteral("Office")));
+    QTRY_COMPARE(mutationFinished.count(), 1);
+    QCOMPARE(mutationFinished.at(0).at(0).toString(), QStringLiteral("room-insert"));
+    QCOMPARE(mutationFinished.at(0).at(1).toBool(), false);
+    QCOMPARE(roomInsertCount, 1);
 }
 
 QTEST_MAIN(SessionControllerTest)
