@@ -1,32 +1,33 @@
-# Architecture
+# Architecture Status
 
-This page describes the running client. Rules and limits are in `AGENTS.md`. How to build is in `README.md`.
+This repository is being rebuilt from a prototype. The current implementation is documented as observed behavior; the target design below is a candidate, not an approved system specification. See [AGENTS.md](../AGENTS.md) for rebuild constraints and [README.md](../README.md) for the current build baseline.
 
-## Context
+## Observed Prototype
 
-The Qt app is the only process in this repo. Supabase holds the account and the home rows. Open-Meteo answers weather. Another repository writes sensor telemetry into the same cloud. Its name and tables are unknown, so this diagram does not invent them.
+The current client is Qt 6 / QML with a C++ session controller and HTTP client. It calls Supabase Auth and PostgREST, and Open-Meteo for weather. The current migration describes `profiles`, `rooms`, and `devices`, but those tables and constraints have not been validated against real devices or the external telemetry producer.
 
 ```mermaid
 flowchart LR
   person[Person]
-  app[Qt app]
+  client[Current Qt/QML client]
   auth[Supabase Auth]
-  db[Postgres via PostgREST]
+  rest[Supabase PostgREST]
+  db[(Supabase Postgres<br/>schema per prototype migration)]
   weather[Open-Meteo]
-  telemetry[Telemetry repo]
-  person --> app
-  app --> auth
-  app --> db
-  app --> weather
-  telemetry --> db
-  app -.->|reads sensor rows| db
+  writer[External sensor writer<br/>not inspected]
+  person --> client
+  client --> auth
+  client --> rest
+  rest <--> db
+  client --> weather
+  writer -.->|reported write path; contract unknown| db
 ```
 
-The access token stays in memory. The refresh token is the only session secret on disk: `session.bin` under the app data directory, sealed with DPAPI on Windows and plaintext in the app-private directory on Android.
+The client can write `devices.is_on`, but this repository contains no command broker, device adapter, gateway, or acknowledgement path. A successful database write therefore does not establish that a physical device changed state. The external sensor writer is user-reported; its repository, payload, credentials, and destination schema remain unknown.
 
-## Client
+The client stores an access token in memory and a refresh token in its platform-specific session file. The Android storage is app-private but not encrypted by the current token store. Review platform secure-storage options before treating session persistence as production-ready.
 
-QML draws the screens and calls `SessionController`. The controller does not parse HTTP bodies itself. `ApiClient` performs the requests. `home_json` parses them. `home_rules` checks names, passwords, email, city, and the greeting band.
+## Current Client Shape
 
 ```mermaid
 flowchart TB
@@ -43,83 +44,56 @@ flowchart TB
   session --> tokens
 ```
 
-`smarthome_core` is the static library of rules, JSON, and the token file, so the tests link those without the GUI. `ApiClient` and `SessionController` belong to the QML module.
+`SessionController` currently coordinates authentication, refresh, room/device state, weather, and mutation callbacks. This is a prototype boundary, not a required shape for the rebuild. Existing tests cover core rules, JSON parsing, and token storage; backend/controller behavior and physical-device interaction are not covered by automated tests.
 
-## Screens
+## Confirmed Gaps
 
-`Main.qml` keeps one `StackView`. Sign-in replaces the stack with Home. Logout replaces it with Login. The other screens are pushed.
+- Device toggles patch a row directly. There is no observed path to hardware, command identity, device acknowledgement, or reported-state reconciliation.
+- Thermometer creation seeds `22.0` and stale readings are randomly changed by the client. These are fabricated measurements and must not be considered real telemetry.
+- The migration constrains thermometer values and grants access based on the current user-token model. Neither rule is confirmed for the external writer or intended household sharing.
+- The app polls while active. There is no demonstrated live command delivery or reconnect protocol.
+- Shared retry state and callbacks that outlive sign-out can create stale or cross-request behavior. Mutation screens can dismiss before the service confirms success.
 
-```mermaid
-flowchart TD
-  login[Login]
-  register[Register]
-  home[Home]
-  settings[Settings]
-  room[Room]
-  edit[Device editor]
-  login --> register
-  login --> home
-  home --> settings
-  home --> room
-  room --> edit
-```
+These are review findings against the prototype. Fixes that depend on the actual telemetry or hardware contract must wait for that contract rather than guessing new columns or policies.
 
-Home reloads when it opens, after a successful change, and every 20 seconds while the app is active. A hidden app sends no data requests.
+## Candidate Target Pattern
 
-## Data
-
-One account owns its profile, rooms, and devices. Deleting a room deletes its devices. A light or plug stores `is_on`. A thermometer stores `celsius` and `reading_at` and has no switch.
+For custom devices, a candidate command path is an authenticated client, a server-side authorization/command boundary, and a gateway or adapter that speaks the device protocol. If Home Assistant already supports the actual devices, evaluate it as the integration boundary before building custom adapters. MQTT is an option for custom gateways, not a decision for this project.
 
 ```mermaid
-erDiagram
-  profiles ||--|| rooms : "same account"
-  rooms ||--o{ devices : contains
-  profiles {
-    uuid id
-    text first_name
-    text city
-  }
-  rooms {
-    uuid id
-    uuid user_id
-    text name
-    int position
-  }
-  devices {
-    uuid id
-    uuid room_id
-    uuid user_id
-    text name
-    text kind
-    bool is_on
-    numeric celsius
-    timestamptz reading_at
-    int position
-  }
+flowchart LR
+  client[Client<br/>framework TBD]
+  auth[Identity and authorization<br/>provider TBD]
+  command[Command boundary<br/>durable status TBD]
+  adapter[Existing hub or<br/>custom gateway TBD]
+  device[Physical device]
+  ingest[Telemetry ingestion<br/>contract TBD]
+  readings[Authoritative reported state<br/>and measurements]
+  notify[Realtime notification<br/>or bounded polling]
+  client --> auth
+  client -->|desired action| command
+  command --> adapter
+  adapter -->|protocol TBD| device
+  device -->|acknowledgement and telemetry| adapter
+  adapter --> ingest
+  ingest --> readings
+  readings -.-> notify
+  notify -.-> client
 ```
 
-The picture groups profile and rooms by account. It is not a foreign key from `rooms` to `profiles`. The SQL foreign keys are `profiles.id`, `rooms.user_id`, and `devices.user_id` to `auth.users`, and `devices.room_id` to `rooms`.
+The UI should distinguish a requested state from device-reported state. A command may be shown as pending until acknowledged, and should expose timeout/failure rather than claiming success after a database write. Realtime delivery, if selected, should notify the client to reconcile with authoritative state after reconnect; notifications alone are not durable state.
 
-`kind` is `light`, `plug`, or `thermometer`. Row level security limits every row to `auth.uid()`.
+## Decision Gates
 
-This app writes rooms, device names, and the desired on/off value. It reads `celsius` and `reading_at`. The telemetry repository is the writer for those two columns. `walkStaleReadings` still writes a fake temperature. That call is leftover and is not part of this architecture.
+| Decision | Evidence needed before implementation |
+| --- | --- |
+| Client framework and launch platforms | Required OSes, native capabilities, packaging, team/tooling constraints |
+| Device integration | Device models, existing hub, protocol, command and acknowledgement behavior |
+| Telemetry | Writer source, payload, identity, units, timestamps, cadence, retention, authorization |
+| Backend | Hosting/cost limits, household authorization, operational ownership, migration and backup needs |
+| Offline behavior | Whether commands may queue, expiry semantics, reconnect reconciliation, stale-data display |
+| Security model | Account/household membership, device credentials, revocation, audit and threat boundaries |
 
-## Sign-in
+## Required Validation Path
 
-Signup and password login both return a session. The client stores the refresh token, then loads the profile and the rooms. A later call refreshes once if the access token expires within 60 seconds, or once after a 401.
-
-```mermaid
-sequenceDiagram
-  participant QML
-  participant Session
-  participant Auth as Supabase Auth
-  participant Data as PostgREST
-  QML->>Session: signIn
-  Session->>Auth: password grant
-  Auth-->>Session: access and refresh tokens
-  Session->>Data: profiles and rooms
-  Data-->>Session: rows
-  Session-->>QML: home
-```
-
-Weather never uses that path. A city change calls Open-Meteo geocoding, then the forecast. A failed forecast keeps the last line from this session.
+Before committing to schema or framework decisions, simulate one device and test one representative real integration. Verify authorization, command expiry and duplicate handling, device acknowledgement, offline/reconnect behavior, telemetry provenance, and state freshness. Design persistence only from the observed contract. Keep the current migration as prototype input; do not apply it to a real project as a validated schema.
