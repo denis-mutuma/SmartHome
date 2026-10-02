@@ -42,6 +42,7 @@ public:
     void forecast(double latitude, double longitude);
 
 signals:
+    void requestStarted(const QString& op, quint64 requestId);
     void completed(const QString& op, quint64 requestId, int status, const QByteArray& body);
     void failed(const QString& op, quint64 requestId, int status, const QString& message);
 

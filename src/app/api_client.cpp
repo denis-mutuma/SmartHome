@@ -116,6 +116,7 @@ void ApiClient::send(const QString& op, const QByteArray& method, const QUrl& ur
 {
     const quint64 requestId = ++nextRequestId_;
     pendingRequests_.insert(requestId, {op, method, url, body, authorize, represent, includeKey});
+    emit requestStarted(op, requestId);
     sendPendingRequest(requestId);
 }
 

@@ -32,6 +32,27 @@ bool mutationHasReturnedRow(const QByteArray& body)
     return response.isArray() && !response.array().isEmpty() && response.array().first().isObject();
 }
 
+QString resourceKeyForOperation(const QString& op)
+{
+    if (op == QLatin1String("profile") || op == QLatin1String("profile-update")) {
+        return QStringLiteral("profile");
+    }
+    if (op == QLatin1String("rooms") || op.startsWith(QLatin1String("room-"))
+        || op.startsWith(QLatin1String("device-"))) {
+        return QStringLiteral("rooms");
+    }
+    if (op == QLatin1String("geocode") || op == QLatin1String("forecast")) {
+        return QStringLiteral("weather");
+    }
+    return {};
+}
+
+bool isReadOperation(const QString& op)
+{
+    return op == QLatin1String("profile") || op == QLatin1String("rooms")
+        || op == QLatin1String("geocode") || op == QLatin1String("forecast");
+}
+
 } // namespace
 
 SessionController::SessionController(QObject* parent)
@@ -48,6 +69,12 @@ SessionController::SessionController(const QString& apiBaseUrl, const QString& a
 {
     connect(&api_, &ApiClient::completed, this, &SessionController::onCompleted);
     connect(&api_, &ApiClient::failed, this, &SessionController::onFailed);
+    connect(&api_, &ApiClient::requestStarted, this, [this](const QString& op, quint64 requestId) {
+        const QString resource = resourceKeyForOperation(op);
+        if (!resource.isEmpty()) {
+            latestResourceRequests_.insert(resource, requestId);
+        }
+    });
     connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState) {
         emit applicationActiveChanged();
     });
@@ -317,6 +344,9 @@ bool SessionController::saveSettings(const QString& firstName, const QString& ci
 void SessionController::onCompleted(const QString& op, quint64 requestId, int status, const QByteArray& body)
 {
     api_.discardRequest(requestId);
+    if (isStaleRead(op, requestId)) {
+        return;
+    }
     Q_UNUSED(status)
     if (op == QLatin1String("signup") || op == QLatin1String("login") || op == QLatin1String("refresh")) {
         const std::optional<SessionTokens> session = parseSession(body);
@@ -392,6 +422,10 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int st
 
 void SessionController::onFailed(const QString& op, quint64 requestId, int status, const QString& message)
 {
+    if (isStaleRead(op, requestId)) {
+        api_.discardRequest(requestId);
+        return;
+    }
     if (status == 401 && op != QLatin1String("login") && op != QLatin1String("signup")
         && op != QLatin1String("refresh") && op != QLatin1String("logout")
         && api_.queueRetry(requestId)) {
@@ -471,14 +505,23 @@ void SessionController::applyProfile(const ProfileRow& profile)
         emit greetingChanged();
     }
     if (cityChanged) {
-        if (city_.isEmpty()) {
-            weatherLine_.clear();
-            weatherIconFile_.clear();
-            emit weatherChanged();
-        } else {
+        latestResourceRequests_.remove(QStringLiteral("weather"));
+        weatherLine_.clear();
+        weatherIconFile_.clear();
+        emit weatherChanged();
+        if (!city_.isEmpty()) {
             api_.geocode(city_);
         }
     }
+}
+
+bool SessionController::isStaleRead(const QString& op, quint64 requestId) const
+{
+    if (!isReadOperation(op) || requestId == 0) {
+        return false;
+    }
+    const QString resource = resourceKeyForOperation(op);
+    return !latestResourceRequests_.contains(resource) || latestResourceRequests_.value(resource) != requestId;
 }
 
 void SessionController::authed(const std::function<void()>& call)

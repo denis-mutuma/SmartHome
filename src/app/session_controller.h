@@ -3,6 +3,7 @@
 #include "api_client.h"
 #include "home_json.h"
 
+#include <QHash>
 #include <QObject>
 #include <QVariantList>
 #include <QtQml/qqmlregistration.h>
@@ -67,6 +68,7 @@ signals:
 private:
     void onCompleted(const QString& op, quint64 requestId, int status, const QByteArray& body);
     void onFailed(const QString& op, quint64 requestId, int status, const QString& message);
+    bool isStaleRead(const QString& op, quint64 requestId) const;
     void applySession(const SessionTokens& session);
     void applyProfile(const ProfileRow& profile);
     void authed(const std::function<void()>& call);
@@ -96,6 +98,7 @@ private:
     QString weatherIconFile_;
     QList<RoomRow> rooms_;
     QList<std::function<void()>> afterRefresh_;
+    QHash<QString, quint64> latestResourceRequests_;
     QString toggleRestoreId_;
     std::optional<bool> toggleRestoreOn_;
     bool signedIn_ = false;
