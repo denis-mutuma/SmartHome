@@ -2,6 +2,7 @@
 #include "token_store.h"
 
 #include <QHostAddress>
+#include <QDir>
 #include <QFile>
 #include <QSignalSpy>
 #include <QTcpServer>
@@ -18,6 +19,8 @@ private slots:
     void rejectedRefreshTokenIsCleared();
     void tokenPersistenceFailureKeepsSessionWithWarning();
     void emptyMutationResultIsNotSuccess();
+    void manualLoginSupersedesStartupRefresh();
+    void signOutWarnsWhenSavedSessionCannotBeRemoved();
 };
 
 void SessionControllerTest::refreshNetworkFailureKeepsSavedToken()
@@ -169,6 +172,102 @@ void SessionControllerTest::emptyMutationResultIsNotSuccess()
     QCOMPARE(mutationFinished.at(0).at(0).toString(), QStringLiteral("room-insert"));
     QCOMPARE(mutationFinished.at(0).at(1).toBool(), false);
     QCOMPARE(roomInsertCount, 1);
+}
+
+void SessionControllerTest::manualLoginSupersedesStartupRefresh()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString tokenPath = directory.filePath(QStringLiteral("session.bin"));
+    QVERIFY(saveRefreshToken(QStringLiteral("old-refresh-token"), tokenPath));
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    const QByteArray newSession = QByteArrayLiteral(
+        "{\"access_token\":\"new-access\",\"refresh_token\":\"new-refresh\","
+        "\"user\":{\"id\":\"123e4567-e89b-12d3-a456-426614174000\"}}");
+    QTcpSocket* pendingRefresh = nullptr;
+    int refreshCount = 0;
+    int loginCount = 0;
+    connect(&server, &QTcpServer::newConnection, &server, [&]() {
+        QTcpSocket* socket = server.nextPendingConnection();
+        connect(socket, &QTcpSocket::readyRead, socket, [&, socket]() {
+            QByteArray request = socket->property("request").toByteArray();
+            request.append(socket->readAll());
+            socket->setProperty("request", request);
+            const qsizetype headerEnd = request.indexOf(QByteArrayLiteral("\r\n\r\n"));
+            if (headerEnd < 0 || socket->property("handled").toBool()) {
+                return;
+            }
+            const QByteArray requestLine = request.left(request.indexOf(QByteArrayLiteral("\r\n")));
+            if (requestLine.contains(QByteArrayLiteral("grant_type=refresh_token"))) {
+                ++refreshCount;
+                pendingRefresh = socket;
+                socket->setProperty("handled", true);
+                return;
+            }
+            if (requestLine.contains(QByteArrayLiteral("grant_type=password"))) {
+                ++loginCount;
+                socket->setProperty("handled", true);
+                socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Length: ")
+                    + QByteArray::number(newSession.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n")
+                    + newSession);
+                return;
+            }
+            const QByteArray body = requestLine.contains(QByteArrayLiteral("/rest/v1/profiles"))
+                ? QByteArrayLiteral("[{\"id\":\"123e4567-e89b-12d3-a456-426614174000\",\"first_name\":\"New\",\"city\":null}]")
+                : QByteArrayLiteral("[]");
+            socket->setProperty("handled", true);
+            socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Length: ")
+                + QByteArray::number(body.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + body);
+        });
+    });
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("anon"), tokenPath);
+    QTRY_COMPARE(refreshCount, 1);
+    QVERIFY(controller.signIn(QStringLiteral("new@example.com"), QStringLiteral("password123")));
+    QTRY_VERIFY(controller.signedIn());
+    QTRY_COMPARE(loginCount, 1);
+    QTRY_VERIFY(pendingRefresh->state() == QAbstractSocket::UnconnectedState);
+    QCOMPARE(loadRefreshToken(tokenPath), QStringLiteral("new-refresh"));
+}
+
+void SessionControllerTest::signOutWarnsWhenSavedSessionCannotBeRemoved()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString tokenPath = directory.filePath(QStringLiteral("session.bin"));
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    const QByteArray sessionBody = QByteArrayLiteral(
+        "{\"access_token\":\"access\",\"refresh_token\":\"refresh\","
+        "\"user\":{\"id\":\"123e4567-e89b-12d3-a456-426614174000\"}}");
+    connect(&server, &QTcpServer::newConnection, &server, [&server, sessionBody]() {
+        QTcpSocket* socket = server.nextPendingConnection();
+        connect(socket, &QTcpSocket::readyRead, socket, [socket, sessionBody]() {
+            const QByteArray request = socket->readAll();
+            const QByteArray body = request.startsWith(QByteArrayLiteral("POST /auth/v1/token"))
+                ? sessionBody : QByteArrayLiteral("[]");
+            socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Length: ")
+                + QByteArray::number(body.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + body);
+        });
+    });
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("anon"), tokenPath);
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("password123")));
+    QTRY_VERIFY(controller.signedIn());
+    QVERIFY(!loadRefreshToken(tokenPath).isEmpty());
+
+    QVERIFY(QFile::remove(tokenPath));
+    QVERIFY(QDir().mkdir(tokenPath));
+    controller.signOut();
+
+    QVERIFY(!controller.signedIn());
+    QVERIFY(controller.statusMessage().contains(QStringLiteral("saved session")));
+    QVERIFY(QFileInfo(tokenPath).isDir());
 }
 
 QTEST_MAIN(SessionControllerTest)
