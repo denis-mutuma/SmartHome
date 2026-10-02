@@ -111,6 +111,7 @@ Page {
                 text: qsTr("Add room")
                 Layout.fillWidth: true
                 Layout.preferredHeight: 96
+                enabled: page.session.pendingMutation === ""
                 onClicked: addDialog.open()
             }
         }
@@ -131,6 +132,21 @@ Page {
             Accessible.name: placeholderText
             background: Rectangle { color: Theme.background; radius: 8 }
         }
-        onAccepted: page.session.createRoom(roomName.text)
+        onAccepted: {
+            if (!page.session.createRoom(roomName.text))
+                addDialog.open()
+        }
+    }
+
+    Connections {
+        target: page.session
+        function onMutationFinished(op, success) {
+            if (op !== "room-insert")
+                return
+            if (success)
+                roomName.clear()
+            else
+                addDialog.open()
+        }
     }
 }

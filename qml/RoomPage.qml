@@ -27,6 +27,7 @@ Page {
         ActionButton {
             text: qsTr("Back")
             fill: Theme.card
+            enabled: page.session.pendingMutation === ""
             onClicked: StackView.view.pop()
         }
         Label {
@@ -40,6 +41,7 @@ Page {
         ActionButton {
             text: qsTr("Rename")
             fill: Theme.card
+            enabled: page.session.pendingMutation === ""
             onClicked: renameDialog.open()
         }
     }
@@ -127,6 +129,7 @@ Page {
         ActionButton {
             text: qsTr("Add device")
             Layout.fillWidth: true
+            enabled: page.session.pendingMutation === ""
             onClicked: page.addDevice()
         }
         ActionButton {
@@ -134,6 +137,7 @@ Page {
             fill: Theme.card
             labelColor: Theme.danger
             Layout.fillWidth: true
+            enabled: page.session.pendingMutation === ""
             onClicked: deleteDialog.open()
         }
         Item { Layout.fillHeight: true }
@@ -154,7 +158,10 @@ Page {
             Accessible.name: qsTr("Room name")
             background: Rectangle { color: Theme.background; radius: 8 }
         }
-        onAccepted: page.session.renameRoom(page.roomId, renameField.text)
+        onAccepted: {
+            if (!page.session.renameRoom(page.roomId, renameField.text))
+                renameDialog.open()
+        }
     }
 
     Dialog {
@@ -166,7 +173,20 @@ Page {
         background: Rectangle { color: Theme.card; radius: 12 }
         onAccepted: {
             page.session.deleteRoom(page.roomId)
-            page.StackView.view.pop()
+        }
+    }
+
+    Connections {
+        target: page.session
+        function onMutationFinished(op, success) {
+            if (op === "room-update" && !success)
+                renameDialog.open()
+            if (op !== "room-delete")
+                return
+            if (success)
+                page.StackView.view.pop()
+            else
+                deleteDialog.open()
         }
     }
 }

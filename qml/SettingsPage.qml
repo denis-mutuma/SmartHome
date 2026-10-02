@@ -16,6 +16,7 @@ Page {
         ActionButton {
             text: qsTr("Back")
             fill: Theme.card
+            enabled: page.session.pendingMutation === ""
             onClicked: StackView.view.pop()
         }
         Label {
@@ -62,17 +63,24 @@ Page {
         ActionButton {
             text: qsTr("Save")
             Layout.fillWidth: true
-            onClicked: {
-                if (page.session.saveSettings(nameField.text, cityField.text))
-                    StackView.view.pop()
-            }
+            enabled: page.session.pendingMutation === ""
+            onClicked: page.session.saveSettings(nameField.text, cityField.text)
         }
         ActionButton {
             text: qsTr("Log out")
             fill: Theme.card
             Layout.fillWidth: true
+            enabled: page.session.pendingMutation === ""
             onClicked: page.session.signOut()
         }
         Item { Layout.fillHeight: true }
+    }
+
+    Connections {
+        target: page.session
+        function onMutationFinished(op, success) {
+            if (op === "profile-update" && success)
+                page.StackView.view.pop()
+        }
     }
 }

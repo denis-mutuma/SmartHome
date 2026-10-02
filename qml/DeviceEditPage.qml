@@ -30,6 +30,7 @@ Page {
         ActionButton {
             text: qsTr("Back")
             fill: Theme.card
+            enabled: page.session.pendingMutation === ""
             onClicked: StackView.view.pop()
         }
         Label {
@@ -74,12 +75,12 @@ Page {
         ActionButton {
             text: qsTr("Save")
             Layout.fillWidth: true
+            enabled: page.session.pendingMutation === ""
             onClicked: {
-                const ok = page.deviceId === ""
-                        ? page.session.createDevice(page.roomId, nameField.text, page.kindValue())
-                        : page.session.renameDevice(page.deviceId, nameField.text)
-                if (ok)
-                    StackView.view.pop()
+                if (page.deviceId === "")
+                    page.session.createDevice(page.roomId, nameField.text, page.kindValue())
+                else
+                    page.session.renameDevice(page.deviceId, nameField.text)
             }
         }
         ActionButton {
@@ -88,11 +89,30 @@ Page {
             fill: Theme.card
             labelColor: Theme.danger
             Layout.fillWidth: true
-            onClicked: {
-                page.session.deleteDevice(page.deviceId)
-                StackView.view.pop()
-            }
+            enabled: page.session.pendingMutation === ""
+            onClicked: deleteDialog.open()
         }
         Item { Layout.fillHeight: true }
+    }
+
+    Dialog {
+        id: deleteDialog
+        title: qsTr("Delete this device?")
+        modal: true
+        anchors.centerIn: parent
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        background: Rectangle { color: Theme.card; radius: 12 }
+        onAccepted: page.session.deleteDevice(page.deviceId)
+    }
+
+    Connections {
+        target: page.session
+        function onMutationFinished(op, success) {
+            if (!success)
+                return
+            if ((page.deviceId === "" && op === "device-insert")
+                    || (page.deviceId !== "" && (op === "device-update" || op === "device-delete")))
+                page.StackView.view.pop()
+        }
     }
 }
