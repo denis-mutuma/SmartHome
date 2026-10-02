@@ -72,47 +72,54 @@ Page {
             Layout.fillWidth: true
         }
 
-        GridLayout {
-            columns: page.width >= 700 ? 2 : 1
-            columnSpacing: 12
-            rowSpacing: 12
+        ScrollView {
+            id: roomScroll
             Layout.fillWidth: true
             Layout.fillHeight: true
+            contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-            Repeater {
-                model: page.session.rooms
-                delegate: Button {
-                    id: roomButton
-                    required property var modelData
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 96
-                    Accessible.name: modelData.name
-                    onClicked: page.openRoom(modelData.id, modelData.name)
-                    background: Rectangle { color: Theme.card; radius: 12 }
-                    contentItem: ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 16
-                        Label {
-                            text: roomButton.modelData.name
-                            color: Theme.text
-                            font.pixelSize: Theme.labelSize
-                            font.bold: true
-                        }
-                        Label {
-                            text: qsTr("%1 devices").arg(roomButton.modelData.devices.length)
-                            color: Theme.muted
-                            font.pixelSize: Theme.secondarySize
+            GridLayout {
+                width: roomScroll.availableWidth
+                columns: page.width >= 700 ? 2 : 1
+                columnSpacing: 12
+                rowSpacing: 12
+
+                Repeater {
+                    model: page.session.rooms
+                    delegate: Button {
+                        id: roomButton
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 96
+                        Accessible.name: modelData.name
+                        onClicked: page.openRoom(modelData.id, modelData.name)
+                        background: Rectangle { color: Theme.card; radius: 12 }
+                        contentItem: ColumnLayout {
+                            anchors.fill: parent
+                            anchors.margins: 16
+                            Label {
+                                text: roomButton.modelData.name
+                                color: Theme.text
+                                font.pixelSize: Theme.labelSize
+                                font.bold: true
+                            }
+                            Label {
+                                text: qsTr("%1 devices").arg(roomButton.modelData.devices.length)
+                                color: Theme.muted
+                                font.pixelSize: Theme.secondarySize
+                            }
                         }
                     }
                 }
-            }
 
-            ActionButton {
-                text: qsTr("Add room")
-                Layout.fillWidth: true
-                Layout.preferredHeight: 96
-                enabled: page.session.pendingMutation === ""
-                onClicked: addDialog.open()
+                ActionButton {
+                    text: qsTr("Add room")
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 96
+                    enabled: page.session.pendingMutation === ""
+                    onClicked: addDialog.open()
+                }
             }
         }
     }
