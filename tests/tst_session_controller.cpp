@@ -21,6 +21,7 @@ private slots:
     void emptyMutationResultIsNotSuccess();
     void manualLoginSupersedesStartupRefresh();
     void signOutWarnsWhenSavedSessionCannotBeRemoved();
+    void olderRoomsResponseCannotOverwriteNewerState();
 };
 
 void SessionControllerTest::refreshNetworkFailureKeepsSavedToken()
@@ -268,6 +269,84 @@ void SessionControllerTest::signOutWarnsWhenSavedSessionCannotBeRemoved()
     QVERIFY(!controller.signedIn());
     QVERIFY(controller.statusMessage().contains(QStringLiteral("saved session")));
     QVERIFY(QFileInfo(tokenPath).isDir());
+}
+
+void SessionControllerTest::olderRoomsResponseCannotOverwriteNewerState()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    const QByteArray jwtPayload = QByteArrayLiteral(
+        R"({"sub":"123e4567-e89b-12d3-a456-426614174000","exp":2000000000})");
+    const QString accessToken = QStringLiteral("aaa.")
+        + QString::fromLatin1(jwtPayload.toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals))
+        + QStringLiteral(".bbb");
+    const QByteArray sessionBody = QStringLiteral(
+        R"({"access_token":"%1","refresh_token":"refresh","user":{"id":"123e4567-e89b-12d3-a456-426614174000"}})")
+        .arg(accessToken).toUtf8();
+    const QByteArray profileBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":null}])");
+    const QByteArray staleRooms = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174001","name":"Stale","position":0,"devices":[]}])");
+    const QByteArray currentRooms = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174002","name":"Current","position":0,"devices":[]}])");
+    QTcpSocket* firstRoomsSocket = nullptr;
+    int roomsRequests = 0;
+
+    connect(&server, &QTcpServer::newConnection, &server, [&]() {
+        QTcpSocket* socket = server.nextPendingConnection();
+        connect(socket, &QTcpSocket::readyRead, socket,
+            [&, socket]() {
+                QByteArray request = socket->property("request").toByteArray();
+                request.append(socket->readAll());
+                socket->setProperty("request", request);
+                const qsizetype headerEnd = request.indexOf(QByteArrayLiteral("\r\n\r\n"));
+                if (headerEnd < 0 || socket->property("handled").toBool()) {
+                    return;
+                }
+                const QByteArray requestLine = request.left(request.indexOf(QByteArrayLiteral("\r\n")));
+                socket->setProperty("handled", true);
+                QByteArray body = QByteArrayLiteral("[]");
+                if (requestLine.contains(QByteArrayLiteral("POST /auth/v1/token"))) {
+                    body = sessionBody;
+                } else if (requestLine.contains(QByteArrayLiteral("/rest/v1/profiles"))) {
+                    body = profileBody;
+                } else if (requestLine.contains(QByteArrayLiteral("/rest/v1/rooms"))) {
+                    ++roomsRequests;
+                    if (roomsRequests == 1) {
+                        firstRoomsSocket = socket;
+                        return;
+                    }
+                    body = currentRooms;
+                }
+                socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Length: ")
+                    + QByteArray::number(body.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + body);
+            });
+    });
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("anon"), directory.filePath(QStringLiteral("session.bin")));
+    QSignalSpy roomsChanged(&controller, &SessionController::roomsChanged);
+    QVERIFY(roomsChanged.isValid());
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("password123")));
+    QTRY_COMPARE(roomsRequests, 1);
+    QVERIFY(firstRoomsSocket != nullptr);
+
+    controller.reload();
+    QTRY_COMPARE(roomsRequests, 2);
+    QTRY_COMPARE(controller.rooms().size(), 1);
+    QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Current"));
+    QCOMPARE(roomsChanged.count(), 1);
+
+    QSignalSpy staleResponseFinished(firstRoomsSocket, &QTcpSocket::disconnected);
+    QVERIFY(staleResponseFinished.isValid());
+    firstRoomsSocket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Length: ")
+        + QByteArray::number(staleRooms.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + staleRooms);
+    QTRY_COMPARE(staleResponseFinished.count(), 1);
+    QCOMPARE(roomsChanged.count(), 1);
+    QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Current"));
 }
 
 QTEST_MAIN(SessionControllerTest)
