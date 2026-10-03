@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QByteArray>
 #include <QString>
 
@@ -14,5 +15,6 @@ struct SessionTokens {
 };
 
 std::optional<SessionTokens> parseSession(const QByteArray& body);
+QDateTime jwtExpiryUtc(const QString& accessToken);
 
 QString parseErrorMessage(const QByteArray& body);

@@ -4,8 +4,29 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QStringList>
+#include <QTimeZone>
 
 #include <initializer_list>
+
+namespace {
+
+QJsonObject jwtPayload(const QString& accessToken)
+{
+    const QStringList parts = accessToken.split(QLatin1Char('.'));
+    if (parts.size() != 3 || parts.at(1).isEmpty()) {
+        return {};
+    }
+    QByteArray payload = parts.at(1).toLatin1();
+    while (payload.size() % 4 != 0) {
+        payload.append('=');
+    }
+    const QJsonDocument document = QJsonDocument::fromJson(
+        QByteArray::fromBase64(payload, QByteArray::Base64UrlEncoding));
+    return document.isObject() ? document.object() : QJsonObject();
+}
+
+} // namespace
 
 std::optional<SessionTokens> parseSession(const QByteArray& body)
 {
@@ -24,17 +45,28 @@ std::optional<SessionTokens> parseSession(const QByteArray& body)
 
     const QJsonObject user = userValue.toObject();
     const QJsonValue userId = user.value(QLatin1String("id"));
-    if (!userId.isString() || !isUuid(userId.toString())) {
-        return std::nullopt;
-    }
-
     SessionTokens session;
     session.accessToken = accessToken.toString();
     session.refreshToken = refreshToken.toString();
     session.expiresIn = object.value(QLatin1String("expires_in")).toInt();
-    session.userId = userId.toString();
+    session.userId = userId.isString() ? userId.toString() : QString();
+    if (!isUuid(session.userId)) {
+        session.userId = jwtPayload(session.accessToken).value(QLatin1String("sub")).toString();
+    }
+    if (!isUuid(session.userId)) {
+        return std::nullopt;
+    }
     session.email = user.value(QLatin1String("email")).toString();
     return session;
+}
+
+QDateTime jwtExpiryUtc(const QString& accessToken)
+{
+    const QJsonValue expiry = jwtPayload(accessToken).value(QLatin1String("exp"));
+    if (!expiry.isDouble()) {
+        return {};
+    }
+    return QDateTime::fromSecsSinceEpoch(static_cast<qint64>(expiry.toDouble()), QTimeZone::utc());
 }
 
 QString parseErrorMessage(const QByteArray& body)
