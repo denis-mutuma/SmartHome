@@ -39,6 +39,9 @@ private slots:
     void thermometerDevice();
     void invalidDevices_data();
     void invalidDevices();
+    void nestedRooms();
+    void invalidRooms_data();
+    void invalidRooms();
 };
 
 void HomeJsonTest::sessionFromUser()
@@ -162,6 +165,63 @@ void HomeJsonTest::invalidDevices()
         QVERIFY(devices->isEmpty());
     } else {
         QVERIFY(!devices.has_value());
+    }
+}
+
+void HomeJsonTest::nestedRooms()
+{
+    const QByteArray body = R"([
+        {"id":"123e4567-e89b-12d3-a456-426614174000","name":"Kitchen","position":1,"devices":[
+            {"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"","name":"Lamp","kind":"light","is_on":true,"position":0},
+            {"id":"123e4567-e89b-12d3-a456-426614174011","room_id":"123e4567-e89b-12d3-a456-426614174001","name":"Wrong room","kind":"plug","is_on":false},
+            {"id":"123e4567-e89b-12d3-a456-426614174012","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Probe","kind":"thermometer","is_on":null,"celsius":17.5,"reading_at":"2026-10-03T12:00:00Z"}
+        ]},
+        {"id":"123e4567-e89b-12d3-a456-426614174001","name":"Bedroom","position":2}
+    ])";
+    const std::optional<QList<RoomRow>> rooms = parseRooms(body);
+    QVERIFY(rooms.has_value());
+    QCOMPARE(rooms->size(), 2);
+    QCOMPARE(rooms->at(0).id, QStringLiteral("123e4567-e89b-12d3-a456-426614174000"));
+    QCOMPARE(rooms->at(0).name, QStringLiteral("Kitchen"));
+    QCOMPARE(rooms->at(0).position, 1);
+    QCOMPARE(rooms->at(0).devices.size(), 2);
+    QCOMPARE(rooms->at(0).devices.at(0).id, QStringLiteral("123e4567-e89b-12d3-a456-426614174010"));
+    QCOMPARE(rooms->at(0).devices.at(0).roomId, rooms->at(0).id);
+    QCOMPARE(rooms->at(0).devices.at(0).name, QStringLiteral("Lamp"));
+    QVERIFY(rooms->at(0).devices.at(0).isOn.has_value());
+    QVERIFY(rooms->at(0).devices.at(0).isOn.value());
+    QCOMPARE(rooms->at(0).devices.at(1).roomId, rooms->at(0).id);
+    QVERIFY(rooms->at(0).devices.at(1).celsius.has_value());
+    QCOMPARE(*rooms->at(0).devices.at(1).celsius, 17.5);
+    QCOMPARE(rooms->at(1).name, QStringLiteral("Bedroom"));
+    QCOMPARE(rooms->at(1).position, 2);
+    QVERIFY(rooms->at(1).devices.isEmpty());
+}
+
+void HomeJsonTest::invalidRooms_data()
+{
+    QTest::addColumn<QByteArray>("body");
+    QTest::addColumn<bool>("isArray");
+    QTest::addColumn<int>("roomCount");
+    QTest::newRow("malformed") << QByteArray("not-json") << false << 0;
+    QTest::newRow("wrong-shape") << QByteArray("{}") << false << 0;
+    QTest::newRow("empty-array") << QByteArray("[]") << true << 0;
+    QTest::newRow("invalid-room-id") << QByteArray(R"([{"id":"bad","name":"Kitchen"}])") << true << 0;
+    QTest::newRow("empty-room-name") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174000","name":""}])") << true << 0;
+    QTest::newRow("wrong-devices-type") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174000","name":"Kitchen","devices":1}])") << true << 0;
+}
+
+void HomeJsonTest::invalidRooms()
+{
+    QFETCH(QByteArray, body);
+    QFETCH(bool, isArray);
+    QFETCH(int, roomCount);
+    const std::optional<QList<RoomRow>> rooms = parseRooms(body);
+    if (isArray) {
+        QVERIFY(rooms.has_value());
+        QCOMPARE(rooms->size(), roomCount);
+    } else {
+        QVERIFY(!rooms.has_value());
     }
 }
 

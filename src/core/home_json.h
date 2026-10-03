@@ -32,9 +32,17 @@ struct DeviceRow {
     int position = 0;
 };
 
+struct RoomRow {
+    QString id;
+    QString name;
+    int position = 0;
+    QList<DeviceRow> devices;
+};
+
 std::optional<SessionTokens> parseSession(const QByteArray& body);
 QDateTime jwtExpiryUtc(const QString& accessToken);
 
 QString parseErrorMessage(const QByteArray& body);
 std::optional<ProfileRow> parseProfile(const QByteArray& body);
+std::optional<QList<RoomRow>> parseRooms(const QByteArray& body);
 std::optional<QList<DeviceRow>> parseDevices(const QByteArray& body);
