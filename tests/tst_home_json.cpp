@@ -1,6 +1,22 @@
 #include "home_json.h"
 
 #include <QTest>
+#include <QTimeZone>
+
+namespace {
+
+QString tokenForPayload(const QByteArray& payload, bool omitPadding)
+{
+    QByteArray encoded = payload.toBase64(QByteArray::Base64UrlEncoding);
+    if (omitPadding) {
+        while (encoded.endsWith('=')) {
+            encoded.chop(1);
+        }
+    }
+    return QStringLiteral("header.%1.signature").arg(QString::fromLatin1(encoded));
+}
+
+} // namespace
 
 class HomeJsonTest : public QObject
 {
@@ -8,6 +24,10 @@ class HomeJsonTest : public QObject
 
 private slots:
     void sessionFromUser();
+    void sessionFromJwtSubject_data();
+    void sessionFromJwtSubject();
+    void invalidJwtExpiry_data();
+    void invalidJwtExpiry();
     void invalidSessions_data();
     void invalidSessions();
     void errorMessages_data();
@@ -24,6 +44,42 @@ void HomeJsonTest::sessionFromUser()
     QCOMPARE(session->expiresIn, 3600);
     QCOMPARE(session->userId, QStringLiteral("123e4567-e89b-12d3-a456-426614174000"));
     QCOMPARE(session->email, QStringLiteral("a@b.c"));
+}
+
+void HomeJsonTest::sessionFromJwtSubject_data()
+{
+    QTest::addColumn<QString>("token");
+    const QByteArray payload = R"({"sub":"123e4567-e89b-12d3-a456-426614174000","exp":1790000000,"n":12})";
+    const QByteArray padded = payload.toBase64(QByteArray::Base64UrlEncoding);
+    QVERIFY(padded.endsWith('='));
+    QTest::newRow("padded") << tokenForPayload(payload, false);
+    QTest::newRow("unpadded") << tokenForPayload(payload, true);
+}
+
+void HomeJsonTest::sessionFromJwtSubject()
+{
+    QFETCH(QString, token);
+    const QByteArray body = QStringLiteral(
+        R"({"access_token":"%1","refresh_token":"refresh-1","user":{}})").arg(token).toUtf8();
+    const std::optional<SessionTokens> session = parseSession(body);
+    QVERIFY(session.has_value());
+    QCOMPARE(session->userId, QStringLiteral("123e4567-e89b-12d3-a456-426614174000"));
+    QCOMPARE(jwtExpiryUtc(token), QDateTime::fromSecsSinceEpoch(1790000000, QTimeZone::utc()));
+}
+
+void HomeJsonTest::invalidJwtExpiry_data()
+{
+    QTest::addColumn<QString>("token");
+    QTest::newRow("not-jwt") << QStringLiteral("invalid");
+    QTest::newRow("malformed-payload") << tokenForPayload(QByteArrayLiteral("not-json"), true);
+    QTest::newRow("missing-exp") << tokenForPayload(QByteArrayLiteral(R"({"sub":"id"})"), true);
+    QTest::newRow("wrong-exp-type") << tokenForPayload(QByteArrayLiteral(R"({"exp":"1790000000"})"), true);
+}
+
+void HomeJsonTest::invalidJwtExpiry()
+{
+    QFETCH(QString, token);
+    QVERIFY(!jwtExpiryUtc(token).isValid());
 }
 
 void HomeJsonTest::invalidSessions_data()
@@ -44,6 +100,10 @@ void HomeJsonTest::invalidSessions_data()
         << QByteArray(R"({"access_token":"a","refresh_token":"r","user":{"id":"bad"}})");
     QTest::newRow("wrong-user-id-type")
         << QByteArray(R"({"access_token":"a","refresh_token":"r","user":{"id":7}})");
+    const QString invalidSubjectToken = tokenForPayload(QByteArrayLiteral(R"({"sub":"not-a-uuid"})"), true);
+    QTest::newRow("invalid-jwt-subject")
+        << QStringLiteral(R"({"access_token":"%1","refresh_token":"r","user":{"id":"bad"}})")
+               .arg(invalidSubjectToken).toUtf8();
 }
 
 void HomeJsonTest::invalidSessions()
