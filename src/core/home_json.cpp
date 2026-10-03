@@ -45,31 +45,43 @@ bool switchableKind(const QString& kind)
         || kind == QLatin1String("thermometer");
 }
 
-std::optional<DeviceRow> deviceFrom(const QJsonValue& value)
+std::optional<DeviceRow> deviceFrom(const QJsonValue& value, const QString& parentRoomId)
 {
     if (!value.isObject()) {
         return std::nullopt;
     }
     const QJsonObject object = value.toObject();
     const QJsonValue id = object.value(QLatin1String("id"));
-    const QJsonValue roomId = object.value(QLatin1String("room_id"));
+    const QJsonValue roomIdValue = object.value(QLatin1String("room_id"));
     const QJsonValue name = object.value(QLatin1String("name"));
     const QJsonValue kind = object.value(QLatin1String("kind"));
     const QJsonValue isOn = object.value(QLatin1String("is_on"));
     const QJsonValue celsius = object.value(QLatin1String("celsius"));
     const QJsonValue readingAt = object.value(QLatin1String("reading_at"));
+    QString roomId;
+    if (roomIdValue.isString() && !roomIdValue.toString().isEmpty()) {
+        roomId = roomIdValue.toString();
+    } else if (roomIdValue.isNull() || roomIdValue.isUndefined()
+        || (roomIdValue.isString() && roomIdValue.toString().isEmpty())) {
+        roomId = parentRoomId;
+    } else {
+        return std::nullopt;
+    }
     const bool thermometer = kind.isString() && kind.toString() == QLatin1String("thermometer");
-    if (!id.isString() || !isUuid(id.toString()) || !roomId.isString() || !isUuid(roomId.toString())
+    if (!id.isString() || !isUuid(id.toString()) || !isUuid(roomId)
         || !name.isString() || name.toString().isEmpty() || !kind.isString() || !switchableKind(kind.toString())
         || (thermometer && ((!isOn.isNull() && !isOn.isUndefined()) || !celsius.isDouble() || !readingAt.isString()))
         || (!thermometer && (!isOn.isBool() || (!celsius.isNull() && !celsius.isUndefined())
             || (!readingAt.isNull() && !readingAt.isUndefined())))) {
         return std::nullopt;
     }
+    if (!parentRoomId.isEmpty() && roomId != parentRoomId) {
+        return std::nullopt;
+    }
 
     DeviceRow row;
     row.id = id.toString();
-    row.roomId = roomId.toString();
+    row.roomId = roomId;
     row.name = name.toString();
     row.kind = kind.toString();
     row.position = object.value(QLatin1String("position")).toInt();
@@ -83,6 +95,18 @@ std::optional<DeviceRow> deviceFrom(const QJsonValue& value)
         row.isOn = isOn.toBool();
     }
     return row;
+}
+
+QList<DeviceRow> devicesFrom(const QJsonArray& array, const QString& parentRoomId)
+{
+    QList<DeviceRow> devices;
+    devices.reserve(array.size());
+    for (const QJsonValue& value : array) {
+        if (const std::optional<DeviceRow> device = deviceFrom(value, parentRoomId)) {
+            devices.append(*device);
+        }
+    }
+    return devices;
 }
 
 } // namespace
@@ -176,11 +200,39 @@ std::optional<QList<DeviceRow>> parseDevices(const QByteArray& body)
         return std::nullopt;
     }
 
-    QList<DeviceRow> devices;
-    for (const QJsonValue& value : document.array()) {
-        if (const std::optional<DeviceRow> device = deviceFrom(value)) {
-            devices.append(*device);
-        }
+    return devicesFrom(document.array(), QString());
+}
+
+std::optional<QList<RoomRow>> parseRooms(const QByteArray& body)
+{
+    const QJsonDocument document = QJsonDocument::fromJson(body);
+    if (!document.isArray()) {
+        return std::nullopt;
     }
-    return devices;
+
+    QList<RoomRow> rooms;
+    for (const QJsonValue& value : document.array()) {
+        if (!value.isObject()) {
+            continue;
+        }
+        const QJsonObject object = value.toObject();
+        const QJsonValue id = object.value(QLatin1String("id"));
+        const QJsonValue name = object.value(QLatin1String("name"));
+        if (!id.isString() || !isUuid(id.toString()) || !name.isString() || name.toString().isEmpty()) {
+            continue;
+        }
+
+        RoomRow room;
+        room.id = id.toString();
+        room.name = name.toString();
+        room.position = object.value(QLatin1String("position")).toInt();
+        const QJsonValue devices = object.value(QLatin1String("devices"));
+        if (devices.isArray()) {
+            room.devices = devicesFrom(devices.toArray(), room.id);
+        } else if (!devices.isUndefined() && !devices.isNull()) {
+            continue;
+        }
+        rooms.append(room);
+    }
+    return rooms;
 }
