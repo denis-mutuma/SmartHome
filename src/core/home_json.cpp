@@ -236,3 +236,29 @@ std::optional<QList<RoomRow>> parseRooms(const QByteArray& body)
     }
     return rooms;
 }
+
+std::optional<GeoHit> parseGeocoding(const QByteArray& body)
+{
+    const QJsonDocument document = QJsonDocument::fromJson(body);
+    if (!document.isObject()) {
+        return std::nullopt;
+    }
+    const QJsonValue results = document.object().value(QLatin1String("results"));
+    if (!results.isArray() || results.toArray().isEmpty() || !results.toArray().at(0).isObject()) {
+        return std::nullopt;
+    }
+
+    const QJsonObject first = results.toArray().at(0).toObject();
+    const QJsonValue name = first.value(QLatin1String("name"));
+    const QJsonValue latitude = first.value(QLatin1String("latitude"));
+    const QJsonValue longitude = first.value(QLatin1String("longitude"));
+    if (!name.isString() || !latitude.isDouble() || !longitude.isDouble()) {
+        return std::nullopt;
+    }
+
+    GeoHit hit;
+    hit.name = name.toString();
+    hit.latitude = latitude.toDouble();
+    hit.longitude = longitude.toDouble();
+    return hit;
+}

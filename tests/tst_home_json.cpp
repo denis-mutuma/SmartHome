@@ -42,6 +42,9 @@ private slots:
     void nestedRooms();
     void invalidRooms_data();
     void invalidRooms();
+    void geocodingHit();
+    void invalidGeocoding_data();
+    void invalidGeocoding();
 };
 
 void HomeJsonTest::sessionFromUser()
@@ -223,6 +226,36 @@ void HomeJsonTest::invalidRooms()
     } else {
         QVERIFY(!rooms.has_value());
     }
+}
+
+void HomeJsonTest::geocodingHit()
+{
+    const std::optional<GeoHit> hit = parseGeocoding(QByteArrayLiteral(
+        R"({"results":[{"name":"Nairobi","latitude":-1.28,"longitude":36.82}]})"));
+    QVERIFY(hit.has_value());
+    QCOMPARE(hit->name, QStringLiteral("Nairobi"));
+    QCOMPARE(hit->latitude, -1.28);
+    QCOMPARE(hit->longitude, 36.82);
+}
+
+void HomeJsonTest::invalidGeocoding_data()
+{
+    QTest::addColumn<QByteArray>("body");
+    QTest::newRow("malformed") << QByteArray("not-json");
+    QTest::newRow("wrong-shape") << QByteArray("[]");
+    QTest::newRow("missing-results") << QByteArray("{}");
+    QTest::newRow("empty-results") << QByteArray(R"({"results":[]})");
+    QTest::newRow("non-object-hit") << QByteArray(R"({"results":[1]})");
+    QTest::newRow("wrong-name-type") << QByteArray(R"({"results":[{"name":1,"latitude":-1.28,"longitude":36.82}]})");
+    QTest::newRow("missing-latitude") << QByteArray(R"({"results":[{"name":"Nairobi","longitude":36.82}]})");
+    QTest::newRow("wrong-latitude-type") << QByteArray(R"({"results":[{"name":"Nairobi","latitude":"-1.28","longitude":36.82}]})");
+    QTest::newRow("wrong-longitude-type") << QByteArray(R"({"results":[{"name":"Nairobi","latitude":-1.28,"longitude":"36.82"}]})");
+}
+
+void HomeJsonTest::invalidGeocoding()
+{
+    QFETCH(QByteArray, body);
+    QVERIFY(!parseGeocoding(body).has_value());
 }
 
 void HomeJsonTest::sessionFromJwtSubject_data()
