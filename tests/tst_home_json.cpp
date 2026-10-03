@@ -32,6 +32,9 @@ private slots:
     void invalidSessions();
     void errorMessages_data();
     void errorMessages();
+    void profileRow();
+    void invalidProfiles_data();
+    void invalidProfiles();
 };
 
 void HomeJsonTest::sessionFromUser()
@@ -44,6 +47,41 @@ void HomeJsonTest::sessionFromUser()
     QCOMPARE(session->expiresIn, 3600);
     QCOMPARE(session->userId, QStringLiteral("123e4567-e89b-12d3-a456-426614174000"));
     QCOMPARE(session->email, QStringLiteral("a@b.c"));
+}
+
+void HomeJsonTest::profileRow()
+{
+    const QByteArray body = R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":"Nairobi"}])";
+    const std::optional<ProfileRow> profile = parseProfile(body);
+    QVERIFY(profile.has_value());
+    QCOMPARE(profile->id, QStringLiteral("123e4567-e89b-12d3-a456-426614174000"));
+    QCOMPARE(profile->firstName, QStringLiteral("Amina"));
+    QCOMPARE(profile->city, QStringLiteral("Nairobi"));
+
+    const std::optional<ProfileRow> noCity = parseProfile(QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":null}])"));
+    QVERIFY(noCity.has_value());
+    QVERIFY(noCity->city.isEmpty());
+}
+
+void HomeJsonTest::invalidProfiles_data()
+{
+    QTest::addColumn<QByteArray>("body");
+    QTest::newRow("empty-array") << QByteArray("[]");
+    QTest::newRow("object") << QByteArray("{}");
+    QTest::newRow("non-object-row") << QByteArray("[1]");
+    QTest::newRow("invalid-id") << QByteArray(R"([{"id":"bad","first_name":"A"}])");
+    QTest::newRow("wrong-id-type") << QByteArray(R"([{"id":1,"first_name":"A"}])");
+    QTest::newRow("missing-name") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174000"}])");
+    QTest::newRow("empty-name") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":""}])");
+    QTest::newRow("wrong-name-type") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":7}])");
+    QTest::newRow("wrong-city-type") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"A","city":7}])");
+}
+
+void HomeJsonTest::invalidProfiles()
+{
+    QFETCH(QByteArray, body);
+    QVERIFY(!parseProfile(body).has_value());
 }
 
 void HomeJsonTest::sessionFromJwtSubject_data()
