@@ -17,8 +17,12 @@ endif()
 qt_add_library(smarthome_core STATIC
     src/core/home_rules.cpp
     src/core/home_json.cpp
+    src/app/token_store.cpp
 )
-target_include_directories(smarthome_core PUBLIC src/core)
+target_include_directories(smarthome_core PUBLIC src/core src/app)
+if(WIN32)
+    target_link_libraries(smarthome_core PUBLIC crypt32)
+endif()
 target_link_libraries(smarthome_core PUBLIC Qt6::Core)
 if(MSVC)
     target_compile_options(smarthome_core PRIVATE /W4)
@@ -33,6 +37,9 @@ add_test(NAME home_rules COMMAND tst_home_rules)
 qt_add_executable(tst_home_json tests/tst_home_json.cpp)
 target_link_libraries(tst_home_json PRIVATE smarthome_core Qt6::Test)
 add_test(NAME home_json COMMAND tst_home_json)
+qt_add_executable(tst_token_store tests/tst_token_store.cpp)
+target_link_libraries(tst_token_store PRIVATE smarthome_core Qt6::Test)
+add_test(NAME token_store COMMAND tst_token_store)
 if(WIN32)
     cmake_path(GET Qt6_DIR PARENT_PATH _qt_cmake_dir)
     cmake_path(GET _qt_cmake_dir PARENT_PATH _qt_lib_dir)
@@ -42,6 +49,9 @@ if(WIN32)
         "PATH=path_list_prepend:${_qt_prefix}/bin"
         "PATH=path_list_prepend:${_cxx_bin}")
     set_property(TEST home_json PROPERTY ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${_qt_prefix}/bin"
+        "PATH=path_list_prepend:${_cxx_bin}")
+    set_property(TEST token_store PROPERTY ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${_qt_prefix}/bin"
         "PATH=path_list_prepend:${_cxx_bin}")
 endif()
