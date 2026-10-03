@@ -2,6 +2,7 @@
 
 #include "home_rules.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStringList>
@@ -83,4 +84,29 @@ QString parseErrorMessage(const QByteArray& body)
         }
     }
     return {};
+}
+
+std::optional<ProfileRow> parseProfile(const QByteArray& body)
+{
+    const QJsonDocument document = QJsonDocument::fromJson(body);
+    if (!document.isArray() || document.array().isEmpty() || !document.array().at(0).isObject()) {
+        return std::nullopt;
+    }
+
+    const QJsonObject object = document.array().at(0).toObject();
+    const QJsonValue id = object.value(QLatin1String("id"));
+    const QJsonValue firstName = object.value(QLatin1String("first_name"));
+    const QJsonValue city = object.value(QLatin1String("city"));
+    if (!id.isString() || !isUuid(id.toString()) || !firstName.isString() || firstName.toString().isEmpty()) {
+        return std::nullopt;
+    }
+    if (!city.isString() && !city.isNull() && !city.isUndefined()) {
+        return std::nullopt;
+    }
+
+    ProfileRow row;
+    row.id = id.toString();
+    row.firstName = firstName.toString();
+    row.city = city.toString();
+    return row;
 }
