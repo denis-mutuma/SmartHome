@@ -45,6 +45,9 @@ private slots:
     void geocodingHit();
     void invalidGeocoding_data();
     void invalidGeocoding();
+    void forecastNow();
+    void invalidForecasts_data();
+    void invalidForecasts();
 };
 
 void HomeJsonTest::sessionFromUser()
@@ -256,6 +259,42 @@ void HomeJsonTest::invalidGeocoding()
 {
     QFETCH(QByteArray, body);
     QVERIFY(!parseGeocoding(body).has_value());
+}
+
+void HomeJsonTest::forecastNow()
+{
+    const std::optional<ForecastNow> day = parseForecast(QByteArrayLiteral(
+        R"({"current":{"temperature_2m":21.5,"weather_code":3,"is_day":1}})"));
+    QVERIFY(day.has_value());
+    QCOMPARE(day->temperatureCelsius, 21.5);
+    QCOMPARE(day->weatherCode, 3);
+    QVERIFY(day->isDay);
+
+    const std::optional<ForecastNow> night = parseForecast(QByteArrayLiteral(
+        R"({"current":{"temperature_2m":8.0,"weather_code":2,"is_day":0}})"));
+    QVERIFY(night.has_value());
+    QCOMPARE(night->temperatureCelsius, 8.0);
+    QCOMPARE(night->weatherCode, 2);
+    QVERIFY(!night->isDay);
+}
+
+void HomeJsonTest::invalidForecasts_data()
+{
+    QTest::addColumn<QByteArray>("body");
+    QTest::newRow("malformed") << QByteArray("not-json");
+    QTest::newRow("wrong-shape") << QByteArray("[]");
+    QTest::newRow("missing-current") << QByteArray("{}");
+    QTest::newRow("non-object-current") << QByteArray(R"({"current":[]})");
+    QTest::newRow("missing-temperature") << QByteArray(R"({"current":{"weather_code":1,"is_day":1}})");
+    QTest::newRow("wrong-temperature-type") << QByteArray(R"({"current":{"temperature_2m":"20","weather_code":1,"is_day":1}})");
+    QTest::newRow("wrong-code-type") << QByteArray(R"({"current":{"temperature_2m":20,"weather_code":"1","is_day":1}})");
+    QTest::newRow("wrong-day-type") << QByteArray(R"({"current":{"temperature_2m":20,"weather_code":1,"is_day":true}})");
+}
+
+void HomeJsonTest::invalidForecasts()
+{
+    QFETCH(QByteArray, body);
+    QVERIFY(!parseForecast(body).has_value());
 }
 
 void HomeJsonTest::sessionFromJwtSubject_data()
