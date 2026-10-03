@@ -288,3 +288,47 @@ std::optional<ForecastNow> parseForecast(const QByteArray& body)
     forecast.isDay = day.toInt() == 1;
     return forecast;
 }
+
+QString weatherLabel(int weatherCode)
+{
+    switch (weatherCode) {
+    case 0: return QStringLiteral("Clear sky");
+    case 1: return QStringLiteral("Mainly clear");
+    case 2: return QStringLiteral("Partly cloudy");
+    case 3: return QStringLiteral("Overcast");
+    case 45: return QStringLiteral("Fog");
+    case 48: return QStringLiteral("Depositing rime fog");
+    case 51: return QStringLiteral("Light drizzle");
+    case 53: return QStringLiteral("Moderate drizzle");
+    case 55: return QStringLiteral("Dense drizzle");
+    case 56: return QStringLiteral("Light freezing drizzle");
+    case 57: return QStringLiteral("Dense freezing drizzle");
+    case 61: return QStringLiteral("Slight rain");
+    case 63: return QStringLiteral("Moderate rain");
+    case 65: return QStringLiteral("Heavy rain");
+    case 66: return QStringLiteral("Light freezing rain");
+    case 67: return QStringLiteral("Heavy freezing rain");
+    case 71: return QStringLiteral("Slight snowfall");
+    case 73: return QStringLiteral("Moderate snowfall");
+    case 75: return QStringLiteral("Heavy snowfall");
+    case 77: return QStringLiteral("Snow grains");
+    case 80: return QStringLiteral("Slight rain showers");
+    case 81: return QStringLiteral("Moderate rain showers");
+    case 82: return QStringLiteral("Violent rain showers");
+    case 85: return QStringLiteral("Slight snow showers");
+    case 86: return QStringLiteral("Heavy snow showers");
+    case 95: return QStringLiteral("Thunderstorm");
+    case 96: return QStringLiteral("Thunderstorm with slight hail");
+    case 97: return QStringLiteral("Heavy thunderstorm");
+    case 99: return QStringLiteral("Thunderstorm with heavy hail");
+    default: return QStringLiteral("Weather");
+    }
+}
+
+QString weatherIconFile(int weatherCode, bool isDay)
+{
+    if (weatherCode == 0) {
+        return isDay ? QStringLiteral("yellow-sun.svg") : QStringLiteral("white-moon.svg");
+    }
+    return QStringLiteral("sun-cloud.svg");
+}
