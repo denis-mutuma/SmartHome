@@ -262,3 +262,29 @@ std::optional<GeoHit> parseGeocoding(const QByteArray& body)
     hit.longitude = longitude.toDouble();
     return hit;
 }
+
+std::optional<ForecastNow> parseForecast(const QByteArray& body)
+{
+    const QJsonDocument document = QJsonDocument::fromJson(body);
+    if (!document.isObject()) {
+        return std::nullopt;
+    }
+    const QJsonValue current = document.object().value(QLatin1String("current"));
+    if (!current.isObject()) {
+        return std::nullopt;
+    }
+
+    const QJsonObject object = current.toObject();
+    const QJsonValue temperature = object.value(QLatin1String("temperature_2m"));
+    const QJsonValue code = object.value(QLatin1String("weather_code"));
+    const QJsonValue day = object.value(QLatin1String("is_day"));
+    if (!temperature.isDouble() || !code.isDouble() || !day.isDouble()) {
+        return std::nullopt;
+    }
+
+    ForecastNow forecast;
+    forecast.temperatureCelsius = temperature.toDouble();
+    forecast.weatherCode = code.toInt();
+    forecast.isDay = day.toInt() == 1;
+    return forecast;
+}

@@ -45,6 +45,12 @@ struct GeoHit {
     double longitude = 0.0;
 };
 
+struct ForecastNow {
+    double temperatureCelsius = 0.0;
+    int weatherCode = 0;
+    bool isDay = false;
+};
+
 std::optional<SessionTokens> parseSession(const QByteArray& body);
 QDateTime jwtExpiryUtc(const QString& accessToken);
 
@@ -53,3 +59,4 @@ std::optional<ProfileRow> parseProfile(const QByteArray& body);
 std::optional<QList<RoomRow>> parseRooms(const QByteArray& body);
 std::optional<QList<DeviceRow>> parseDevices(const QByteArray& body);
 std::optional<GeoHit> parseGeocoding(const QByteArray& body);
+std::optional<ForecastNow> parseForecast(const QByteArray& body);
