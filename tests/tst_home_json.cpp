@@ -48,6 +48,7 @@ private slots:
     void forecastNow();
     void invalidForecasts_data();
     void invalidForecasts();
+    void weatherDisplayMappings();
 };
 
 void HomeJsonTest::sessionFromUser()
@@ -295,6 +296,18 @@ void HomeJsonTest::invalidForecasts()
 {
     QFETCH(QByteArray, body);
     QVERIFY(!parseForecast(body).has_value());
+}
+
+void HomeJsonTest::weatherDisplayMappings()
+{
+    QCOMPARE(weatherLabel(0), QStringLiteral("Clear sky"));
+    QCOMPARE(weatherLabel(2), QStringLiteral("Partly cloudy"));
+    QCOMPARE(weatherLabel(95), QStringLiteral("Thunderstorm"));
+    QCOMPARE(weatherLabel(4), QStringLiteral("Weather"));
+    QCOMPARE(weatherIconFile(0, true), QStringLiteral("yellow-sun.svg"));
+    QCOMPARE(weatherIconFile(0, false), QStringLiteral("white-moon.svg"));
+    QCOMPARE(weatherIconFile(2, true), QStringLiteral("sun-cloud.svg"));
+    QCOMPARE(weatherIconFile(97, false), QStringLiteral("sun-cloud.svg"));
 }
 
 void HomeJsonTest::sessionFromJwtSubject_data()

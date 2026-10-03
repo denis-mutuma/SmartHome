@@ -60,3 +60,5 @@ std::optional<QList<RoomRow>> parseRooms(const QByteArray& body);
 std::optional<QList<DeviceRow>> parseDevices(const QByteArray& body);
 std::optional<GeoHit> parseGeocoding(const QByteArray& body);
 std::optional<ForecastNow> parseForecast(const QByteArray& body);
+QString weatherLabel(int weatherCode);
+QString weatherIconFile(int weatherCode, bool isDay);
