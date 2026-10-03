@@ -39,6 +39,12 @@ struct RoomRow {
     QList<DeviceRow> devices;
 };
 
+struct GeoHit {
+    QString name;
+    double latitude = 0.0;
+    double longitude = 0.0;
+};
+
 std::optional<SessionTokens> parseSession(const QByteArray& body);
 QDateTime jwtExpiryUtc(const QString& accessToken);
 
@@ -46,3 +52,4 @@ QString parseErrorMessage(const QByteArray& body);
 std::optional<ProfileRow> parseProfile(const QByteArray& body);
 std::optional<QList<RoomRow>> parseRooms(const QByteArray& body);
 std::optional<QList<DeviceRow>> parseDevices(const QByteArray& body);
+std::optional<GeoHit> parseGeocoding(const QByteArray& body);
