@@ -27,6 +27,41 @@ QJsonObject jwtPayload(const QString& accessToken)
     return document.isObject() ? document.object() : QJsonObject();
 }
 
+bool switchableKind(const QString& kind)
+{
+    return kind == QLatin1String("light") || kind == QLatin1String("plug");
+}
+
+std::optional<DeviceRow> deviceFrom(const QJsonValue& value)
+{
+    if (!value.isObject()) {
+        return std::nullopt;
+    }
+    const QJsonObject object = value.toObject();
+    const QJsonValue id = object.value(QLatin1String("id"));
+    const QJsonValue roomId = object.value(QLatin1String("room_id"));
+    const QJsonValue name = object.value(QLatin1String("name"));
+    const QJsonValue kind = object.value(QLatin1String("kind"));
+    const QJsonValue isOn = object.value(QLatin1String("is_on"));
+    const QJsonValue celsius = object.value(QLatin1String("celsius"));
+    const QJsonValue readingAt = object.value(QLatin1String("reading_at"));
+    if (!id.isString() || !isUuid(id.toString()) || !roomId.isString() || !isUuid(roomId.toString())
+        || !name.isString() || name.toString().isEmpty() || !kind.isString() || !switchableKind(kind.toString())
+        || !isOn.isBool() || (!celsius.isNull() && !celsius.isUndefined())
+        || (!readingAt.isNull() && !readingAt.isUndefined())) {
+        return std::nullopt;
+    }
+
+    DeviceRow row;
+    row.id = id.toString();
+    row.roomId = roomId.toString();
+    row.name = name.toString();
+    row.kind = kind.toString();
+    row.isOn = isOn.toBool();
+    row.position = object.value(QLatin1String("position")).toInt();
+    return row;
+}
+
 } // namespace
 
 std::optional<SessionTokens> parseSession(const QByteArray& body)
@@ -109,4 +144,20 @@ std::optional<ProfileRow> parseProfile(const QByteArray& body)
     row.firstName = firstName.toString();
     row.city = city.toString();
     return row;
+}
+
+std::optional<QList<DeviceRow>> parseDevices(const QByteArray& body)
+{
+    const QJsonDocument document = QJsonDocument::fromJson(body);
+    if (!document.isArray()) {
+        return std::nullopt;
+    }
+
+    QList<DeviceRow> devices;
+    for (const QJsonValue& value : document.array()) {
+        if (const std::optional<DeviceRow> device = deviceFrom(value)) {
+            devices.append(*device);
+        }
+    }
+    return devices;
 }
