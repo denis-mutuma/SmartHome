@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QStringList>
 #include <QTimeZone>
 
@@ -27,9 +28,21 @@ QJsonObject jwtPayload(const QString& accessToken)
     return document.isObject() ? document.object() : QJsonObject();
 }
 
+QDateTime timestampFrom(const QJsonValue& value)
+{
+    if (!value.isString()) {
+        return {};
+    }
+    static const QRegularExpression fraction(QStringLiteral("\\.\\d+"));
+    QString text = value.toString();
+    text.replace(fraction, QString());
+    return QDateTime::fromString(text, Qt::ISODate);
+}
+
 bool switchableKind(const QString& kind)
 {
-    return kind == QLatin1String("light") || kind == QLatin1String("plug");
+    return kind == QLatin1String("light") || kind == QLatin1String("plug")
+        || kind == QLatin1String("thermometer");
 }
 
 std::optional<DeviceRow> deviceFrom(const QJsonValue& value)
@@ -45,10 +58,12 @@ std::optional<DeviceRow> deviceFrom(const QJsonValue& value)
     const QJsonValue isOn = object.value(QLatin1String("is_on"));
     const QJsonValue celsius = object.value(QLatin1String("celsius"));
     const QJsonValue readingAt = object.value(QLatin1String("reading_at"));
+    const bool thermometer = kind.isString() && kind.toString() == QLatin1String("thermometer");
     if (!id.isString() || !isUuid(id.toString()) || !roomId.isString() || !isUuid(roomId.toString())
         || !name.isString() || name.toString().isEmpty() || !kind.isString() || !switchableKind(kind.toString())
-        || !isOn.isBool() || (!celsius.isNull() && !celsius.isUndefined())
-        || (!readingAt.isNull() && !readingAt.isUndefined())) {
+        || (thermometer && ((!isOn.isNull() && !isOn.isUndefined()) || !celsius.isDouble() || !readingAt.isString()))
+        || (!thermometer && (!isOn.isBool() || (!celsius.isNull() && !celsius.isUndefined())
+            || (!readingAt.isNull() && !readingAt.isUndefined())))) {
         return std::nullopt;
     }
 
@@ -57,8 +72,16 @@ std::optional<DeviceRow> deviceFrom(const QJsonValue& value)
     row.roomId = roomId.toString();
     row.name = name.toString();
     row.kind = kind.toString();
-    row.isOn = isOn.toBool();
     row.position = object.value(QLatin1String("position")).toInt();
+    if (thermometer) {
+        row.celsius = celsius.toDouble();
+        row.readingAt = timestampFrom(readingAt);
+        if (!row.readingAt.isValid()) {
+            return std::nullopt;
+        }
+    } else {
+        row.isOn = isOn.toBool();
+    }
     return row;
 }
 

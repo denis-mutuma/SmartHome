@@ -36,6 +36,7 @@ private slots:
     void invalidProfiles_data();
     void invalidProfiles();
     void switchableDevices();
+    void thermometerDevice();
     void invalidDevices_data();
     void invalidDevices();
 };
@@ -111,6 +112,24 @@ void HomeJsonTest::switchableDevices()
     QCOMPARE(devices->at(1).position, 3);
 }
 
+void HomeJsonTest::thermometerDevice()
+{
+    const QByteArray body = R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Probe","kind":"thermometer","is_on":null,"celsius":17.5,"reading_at":"2026-10-03T12:00:00.123456+00:00","position":1}])";
+    const std::optional<QList<DeviceRow>> devices = parseDevices(body);
+    QVERIFY(devices.has_value());
+    QCOMPARE(devices->size(), 1);
+    QCOMPARE(devices->at(0).id, QStringLiteral("123e4567-e89b-12d3-a456-426614174010"));
+    QCOMPARE(devices->at(0).roomId, QStringLiteral("123e4567-e89b-12d3-a456-426614174000"));
+    QCOMPARE(devices->at(0).name, QStringLiteral("Probe"));
+    QCOMPARE(devices->at(0).kind, QStringLiteral("thermometer"));
+    QVERIFY(!devices->at(0).isOn.has_value());
+    QVERIFY(devices->at(0).celsius.has_value());
+    QCOMPARE(*devices->at(0).celsius, 17.5);
+    QCOMPARE(devices->at(0).readingAt,
+        QDateTime::fromString(QStringLiteral("2026-10-03T12:00:00+00:00"), Qt::ISODate));
+    QCOMPARE(devices->at(0).position, 1);
+}
+
 void HomeJsonTest::invalidDevices_data()
 {
     QTest::addColumn<QByteArray>("body");
@@ -126,6 +145,11 @@ void HomeJsonTest::invalidDevices_data()
     QTest::newRow("missing-state") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Lamp","kind":"light"}])") << true;
     QTest::newRow("sensor-value") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Lamp","kind":"light","is_on":true,"celsius":21.5}])") << true;
     QTest::newRow("sensor-timestamp") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Lamp","kind":"light","is_on":true,"reading_at":"2026-10-03T12:00:00Z"}])") << true;
+    QTest::newRow("thermometer-null-celsius") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Probe","kind":"thermometer","is_on":null,"celsius":null,"reading_at":"2026-10-03T12:00:00Z"}])") << true;
+    QTest::newRow("thermometer-missing-reading") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Probe","kind":"thermometer","is_on":null,"celsius":22.0}])") << true;
+    QTest::newRow("thermometer-invalid-reading") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Probe","kind":"thermometer","is_on":null,"celsius":22.0,"reading_at":"not-a-date"}])") << true;
+    QTest::newRow("thermometer-state-conflict") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Probe","kind":"thermometer","is_on":false,"celsius":22.0,"reading_at":"2026-10-03T12:00:00Z"}])") << true;
+    QTest::newRow("thermometer-wrong-temperature-type") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Probe","kind":"thermometer","is_on":null,"celsius":"22","reading_at":"2026-10-03T12:00:00Z"}])") << true;
 }
 
 void HomeJsonTest::invalidDevices()
