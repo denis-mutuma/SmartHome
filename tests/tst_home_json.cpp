@@ -35,6 +35,9 @@ private slots:
     void profileRow();
     void invalidProfiles_data();
     void invalidProfiles();
+    void switchableDevices();
+    void invalidDevices_data();
+    void invalidDevices();
 };
 
 void HomeJsonTest::sessionFromUser()
@@ -82,6 +85,60 @@ void HomeJsonTest::invalidProfiles()
 {
     QFETCH(QByteArray, body);
     QVERIFY(!parseProfile(body).has_value());
+}
+
+void HomeJsonTest::switchableDevices()
+{
+    const QByteArray body = R"([
+        {"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Lamp","kind":"light","is_on":true,"celsius":null,"reading_at":null,"position":2},
+        {"id":"123e4567-e89b-12d3-a456-426614174011","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Fan","kind":"plug","is_on":false,"position":3}
+    ])";
+    const std::optional<QList<DeviceRow>> devices = parseDevices(body);
+    QVERIFY(devices.has_value());
+    QCOMPARE(devices->size(), 2);
+    QCOMPARE(devices->at(0).id, QStringLiteral("123e4567-e89b-12d3-a456-426614174010"));
+    QCOMPARE(devices->at(0).roomId, QStringLiteral("123e4567-e89b-12d3-a456-426614174000"));
+    QCOMPARE(devices->at(0).name, QStringLiteral("Lamp"));
+    QCOMPARE(devices->at(0).kind, QStringLiteral("light"));
+    QVERIFY(devices->at(0).isOn.has_value());
+    QCOMPARE(*devices->at(0).isOn, true);
+    QVERIFY(!devices->at(0).celsius.has_value());
+    QVERIFY(!devices->at(0).readingAt.isValid());
+    QCOMPARE(devices->at(0).position, 2);
+    QCOMPARE(devices->at(1).name, QStringLiteral("Fan"));
+    QVERIFY(devices->at(1).isOn.has_value());
+    QCOMPARE(*devices->at(1).isOn, false);
+    QCOMPARE(devices->at(1).position, 3);
+}
+
+void HomeJsonTest::invalidDevices_data()
+{
+    QTest::addColumn<QByteArray>("body");
+    QTest::addColumn<bool>("isArray");
+    QTest::newRow("malformed") << QByteArray("not-json") << false;
+    QTest::newRow("wrong-shape") << QByteArray("{}") << false;
+    QTest::newRow("non-object-row") << QByteArray("[1]") << true;
+    QTest::newRow("invalid-id") << QByteArray(R"([{"id":"bad","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Lamp","kind":"light","is_on":true}])") << true;
+    QTest::newRow("invalid-room-id") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":7,"name":"Lamp","kind":"light","is_on":true}])") << true;
+    QTest::newRow("unknown-kind") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Probe","kind":"thermometer","is_on":true}])") << true;
+    QTest::newRow("missing-name") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","kind":"light","is_on":true}])") << true;
+    QTest::newRow("wrong-state-type") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Lamp","kind":"light","is_on":1}])") << true;
+    QTest::newRow("missing-state") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Lamp","kind":"light"}])") << true;
+    QTest::newRow("sensor-value") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Lamp","kind":"light","is_on":true,"celsius":21.5}])") << true;
+    QTest::newRow("sensor-timestamp") << QByteArray(R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Lamp","kind":"light","is_on":true,"reading_at":"2026-10-03T12:00:00Z"}])") << true;
+}
+
+void HomeJsonTest::invalidDevices()
+{
+    QFETCH(QByteArray, body);
+    QFETCH(bool, isArray);
+    const std::optional<QList<DeviceRow>> devices = parseDevices(body);
+    if (isArray) {
+        QVERIFY(devices.has_value());
+        QVERIFY(devices->isEmpty());
+    } else {
+        QVERIFY(!devices.has_value());
+    }
 }
 
 void HomeJsonTest::sessionFromJwtSubject_data()
