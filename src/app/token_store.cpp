@@ -6,6 +6,10 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 
+#ifdef Q_OS_ANDROID
+#include <QJniObject>
+#endif
+
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -68,6 +72,33 @@ QByteArray unprotect(const QByteArray& sealed)
 }
 #endif
 
+#ifdef Q_OS_ANDROID
+const QByteArray androidTokenPrefix = QByteArrayLiteral("android:v1:");
+
+QString encryptAndroidToken(const QString& token)
+{
+    const QJniObject javaToken = QJniObject::fromString(token);
+    const QJniObject encrypted = QJniObject::callStaticObjectMethod(
+        "org/mutuma/smarthome/TokenVault", "encrypt", "(Ljava/lang/String;)Ljava/lang/String;",
+        javaToken.object<jstring>());
+    return encrypted.isValid() ? encrypted.toString() : QString();
+}
+
+QString decryptAndroidToken(const QString& ciphertext)
+{
+    const QJniObject javaCiphertext = QJniObject::fromString(ciphertext);
+    const QJniObject decrypted = QJniObject::callStaticObjectMethod(
+        "org/mutuma/smarthome/TokenVault", "decrypt", "(Ljava/lang/String;)Ljava/lang/String;",
+        javaCiphertext.object<jstring>());
+    return decrypted.isValid() ? decrypted.toString() : QString();
+}
+
+bool clearAndroidTokenKey()
+{
+    return QJniObject::callStaticMethod<jboolean>("org/mutuma/smarthome/TokenVault", "clearKey");
+}
+#endif
+
 } // namespace
 
 QString sessionFilePath()
@@ -88,6 +119,12 @@ bool saveRefreshToken(const QString& token, const QString& filePath)
         return false;
     }
     return writeBytes(filePath, sealed);
+#elif defined(Q_OS_ANDROID)
+    const QString ciphertext = encryptAndroidToken(token);
+    if (ciphertext.isEmpty()) {
+        return false;
+    }
+    return writeBytes(filePath, androidTokenPrefix + ciphertext.toLatin1());
 #else
     return writeBytes(filePath, plain);
 #endif
@@ -102,6 +139,29 @@ QString loadRefreshToken(const QString& filePath)
     const QByteArray bytes = file.readAll();
 #ifdef Q_OS_WIN
     return QString::fromUtf8(unprotect(bytes));
+#elif defined(Q_OS_ANDROID)
+    if (bytes.startsWith("android:") && !bytes.startsWith(androidTokenPrefix)) {
+        clearRefreshToken(filePath);
+        return {};
+    }
+    if (bytes.startsWith(androidTokenPrefix)) {
+        const QString token = decryptAndroidToken(QString::fromLatin1(bytes.mid(androidTokenPrefix.size())));
+        if (token.isEmpty()) {
+            clearRefreshToken(filePath);
+        }
+        return token;
+    }
+
+    const QString legacyToken = QString::fromUtf8(bytes);
+    if (legacyToken.isEmpty() || legacyToken.toUtf8() != bytes) {
+        clearRefreshToken(filePath);
+        return {};
+    }
+    if (saveRefreshToken(legacyToken, filePath)) {
+        return legacyToken;
+    }
+    clearRefreshToken(filePath);
+    return {};
 #else
     return QString::fromUtf8(bytes);
 #endif
@@ -109,5 +169,10 @@ QString loadRefreshToken(const QString& filePath)
 
 bool clearRefreshToken(const QString& filePath)
 {
-    return !QFile::exists(filePath) || QFile::remove(filePath);
+    const bool fileRemoved = !QFile::exists(filePath) || QFile::remove(filePath);
+#ifdef Q_OS_ANDROID
+    return clearAndroidTokenKey() && fileRemoved;
+#else
+    return fileRemoved;
+#endif
 }

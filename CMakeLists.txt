@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Network Test)
 
 qt_standard_project_setup(REQUIRES 6.11)
+set(QT_USE_TARGET_ANDROID_BUILD_DIR TRUE CACHE BOOL "Separate Android build directory for each executable")
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/config.local.cmake")
     include("${CMAKE_SOURCE_DIR}/config.local.cmake")
@@ -40,6 +41,10 @@ add_test(NAME home_json COMMAND tst_home_json)
 qt_add_executable(tst_token_store tests/tst_token_store.cpp)
 target_link_libraries(tst_token_store PRIVATE smarthome_core Qt6::Test)
 add_test(NAME token_store COMMAND tst_token_store)
+if(ANDROID)
+    set_property(TARGET tst_token_store PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
+        "${CMAKE_SOURCE_DIR}/android")
+endif()
 if(WIN32)
     cmake_path(GET Qt6_DIR PARENT_PATH _qt_cmake_dir)
     cmake_path(GET _qt_cmake_dir PARENT_PATH _qt_lib_dir)
@@ -102,6 +107,10 @@ set_target_properties(appSmartHome PROPERTIES
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
 )
+if(ANDROID)
+    set_property(TARGET appSmartHome PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
+        "${CMAKE_SOURCE_DIR}/android")
+endif()
 
 target_link_libraries(appSmartHome
     PRIVATE Qt6::Quick
