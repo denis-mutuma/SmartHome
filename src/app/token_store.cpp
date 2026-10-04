@@ -112,8 +112,8 @@ bool saveRefreshToken(const QString& token, const QString& filePath)
     if (token.isEmpty()) {
         return clearRefreshToken(filePath);
     }
-    const QByteArray plain = token.toUtf8();
 #ifdef Q_OS_WIN
+    const QByteArray plain = token.toUtf8();
     const QByteArray sealed = protect(plain);
     if (sealed.isEmpty()) {
         return false;
@@ -126,6 +126,7 @@ bool saveRefreshToken(const QString& token, const QString& filePath)
     }
     return writeBytes(filePath, androidTokenPrefix + ciphertext.toLatin1());
 #else
+    const QByteArray plain = token.toUtf8();
     return writeBytes(filePath, plain);
 #endif
 }
