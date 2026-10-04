@@ -13,6 +13,7 @@ private slots:
     void missingAndCorrupt();
 #ifdef Q_OS_ANDROID
     void migratesLegacyPlaintext();
+    void logoutInvalidatesStoredCiphertext();
 #endif
 };
 
@@ -86,6 +87,31 @@ void TokenStoreTest::migratesLegacyPlaintext()
     const QByteArray stored = encrypted.readAll();
     QVERIFY(stored.startsWith("android:v1:"));
     QVERIFY(!stored.contains(token.toUtf8()));
+}
+
+void TokenStoreTest::logoutInvalidatesStoredCiphertext()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const QString path = dir.filePath(QStringLiteral("session.bin"));
+    const QString token = QStringLiteral("refresh-token-before-logout");
+    QVERIFY(saveRefreshToken(token, path));
+
+    QFile encrypted(path);
+    QVERIFY(encrypted.open(QIODevice::ReadOnly));
+    const QByteArray stored = encrypted.readAll();
+    encrypted.close();
+    QVERIFY(stored.startsWith("android:v1:"));
+
+    QVERIFY(clearRefreshToken(path));
+    QVERIFY(!QFile::exists(path));
+
+    QFile staleCiphertext(path);
+    QVERIFY(staleCiphertext.open(QIODevice::WriteOnly));
+    QCOMPARE(staleCiphertext.write(stored), stored.size());
+    staleCiphertext.close();
+    QVERIFY(loadRefreshToken(path).isEmpty());
+    QVERIFY(!QFile::exists(path));
 }
 #endif
 

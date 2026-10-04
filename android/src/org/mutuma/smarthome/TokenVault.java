@@ -83,7 +83,7 @@ public final class TokenVault {
             if (keyStore.containsAlias(KEY_ALIAS)) {
                 keyStore.deleteEntry(KEY_ALIAS);
             }
-            return true;
+            return !keyStore.containsAlias(KEY_ALIAS);
         } catch (Exception exception) {
             return false;
         }
