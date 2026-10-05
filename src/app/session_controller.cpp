@@ -4,8 +4,11 @@
 #include "home_rules.h"
 #include "token_store.h"
 
+#include <QVariant>
+#include <QVariantList>
 #include <QVariantMap>
 
+#include <algorithm>
 #include <utility>
 
 SessionController::SessionController(QObject* parent)
@@ -117,6 +120,34 @@ bool SessionController::createRoom(const QString& name)
     return true;
 }
 
+bool SessionController::createDevice(const QString& roomId, const QString& name, const QString& kind)
+{
+    if (!signedIn_) {
+        setStatus(tr("Sign in to manage your home."));
+        return false;
+    }
+    const QString normalizedName = name.trimmed();
+    if (!isNameOk(normalizedName)) {
+        setStatus(tr("Use 1 to 40 characters for the device name."));
+        return false;
+    }
+    if (kind != QLatin1String("light") && kind != QLatin1String("plug")
+        && kind != QLatin1String("thermometer")) {
+        setStatus(tr("Choose a supported device type."));
+        return false;
+    }
+    const auto room = std::find_if(roomRows_.cbegin(), roomRows_.cend(), [&roomId](const RoomRow& row) {
+        return row.id == roomId;
+    });
+    if (room == roomRows_.cend()) {
+        setStatus(tr("Choose an existing room."));
+        return false;
+    }
+    setStatus({});
+    api_.insertDevice(roomId, normalizedName, kind, nextDevicePosition(roomId));
+    return true;
+}
+
 QVariantList SessionController::rooms() const
 {
     QVariantList result;
@@ -125,6 +156,21 @@ QVariantList SessionController::rooms() const
         roomMap.insert(QStringLiteral("id"), room.id);
         roomMap.insert(QStringLiteral("name"), room.name);
         roomMap.insert(QStringLiteral("position"), room.position);
+        roomMap.insert(QStringLiteral("roomId"), room.id);
+        roomMap.insert(QStringLiteral("deviceCount"), room.devices.size());
+        QVariantList devices;
+        for (const DeviceRow& device : room.devices) {
+            QVariantMap deviceMap;
+            deviceMap.insert(QStringLiteral("deviceId"), device.id);
+            deviceMap.insert(QStringLiteral("name"), device.name);
+            deviceMap.insert(QStringLiteral("kind"), device.kind);
+            deviceMap.insert(QStringLiteral("celsius"), device.celsius.has_value()
+                    ? QVariant(*device.celsius) : QVariant());
+            deviceMap.insert(QStringLiteral("isOn"), device.isOn.has_value()
+                    ? QVariant(*device.isOn) : QVariant());
+            devices.append(deviceMap);
+        }
+        roomMap.insert(QStringLiteral("devices"), devices);
         result.append(roomMap);
     }
     return result;
@@ -152,6 +198,24 @@ void SessionController::onCompleted(const QString& op, quint64, int, const QByte
         roomRows_.append(rooms->first());
         emit roomsChanged();
         setStatus({});
+        return;
+    }
+    if (op == QLatin1String("device-insert")) {
+        const std::optional<QList<DeviceRow>> devices = parseDevices(body);
+        if (!devices.has_value() || devices->size() != 1) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        const DeviceRow& inserted = devices->first();
+        for (RoomRow& room : roomRows_) {
+            if (room.id == inserted.roomId) {
+                room.devices.append(inserted);
+                emit roomsChanged();
+                setStatus({});
+                return;
+            }
+        }
+        setStatus(tr("The service could not complete the request."));
         return;
     }
     if (op == QLatin1String("profile") || op == QLatin1String("profile-update")) {
@@ -196,7 +260,8 @@ void SessionController::onFailed(const QString& op, quint64, int, const QString&
         setStatus(message);
     } else if (op == QLatin1String("login") || op == QLatin1String("signup")
         || op == QLatin1String("profile") || op == QLatin1String("profile-update")
-        || op == QLatin1String("rooms") || op == QLatin1String("room-insert")) {
+        || op == QLatin1String("rooms") || op == QLatin1String("room-insert")
+        || op == QLatin1String("device-insert")) {
         setStatus(message);
     }
 }
@@ -301,6 +366,21 @@ int SessionController::nextRoomPosition() const
     int position = 0;
     for (const RoomRow& room : roomRows_) {
         position = qMax(position, room.position + 1);
+    }
+    return position;
+}
+
+int SessionController::nextDevicePosition(const QString& roomId) const
+{
+    int position = 0;
+    for (const RoomRow& room : roomRows_) {
+        if (room.id != roomId) {
+            continue;
+        }
+        for (const DeviceRow& device : room.devices) {
+            position = qMax(position, device.position + 1);
+        }
+        break;
     }
     return position;
 }
