@@ -148,6 +148,45 @@ bool SessionController::createDevice(const QString& roomId, const QString& name,
     return true;
 }
 
+bool SessionController::setDeviceOn(const QString& deviceId, bool on)
+{
+    if (!signedIn_) {
+        setStatus(tr("Sign in to manage your home."));
+        return false;
+    }
+    if (!pendingDeviceOnId_.isEmpty()) {
+        setStatus(tr("Wait for the current device update to finish."));
+        return false;
+    }
+    if (!isUuid(deviceId)) {
+        setStatus(tr("Choose an existing switchable device."));
+        return false;
+    }
+    for (RoomRow& room : roomRows_) {
+        for (DeviceRow& device : room.devices) {
+            if (device.id != deviceId) {
+                continue;
+            }
+            if (!device.isOn.has_value()) {
+                setStatus(tr("Thermometers cannot be switched."));
+                return false;
+            }
+            if (*device.isOn == on) {
+                return true;
+            }
+            pendingDeviceOnId_ = device.id;
+            previousDeviceOn_ = device.isOn;
+            device.isOn = on;
+            emit roomsChanged();
+            setStatus({});
+            api_.setDeviceOn(device.id, on);
+            return true;
+        }
+    }
+    setStatus(tr("Choose an existing switchable device."));
+    return false;
+}
+
 QVariantList SessionController::rooms() const
 {
     QVariantList result;
@@ -218,6 +257,30 @@ void SessionController::onCompleted(const QString& op, quint64, int, const QByte
         setStatus(tr("The service could not complete the request."));
         return;
     }
+    if (op == QLatin1String("device-on")) {
+        const std::optional<QList<DeviceRow>> devices = parseDevices(body);
+        if (!devices.has_value() || devices->size() != 1
+            || devices->first().id != pendingDeviceOnId_ || !devices->first().isOn.has_value()) {
+            clearPendingDeviceToggle(true);
+            setStatus(tr("Couldn't update the device."));
+            return;
+        }
+        const DeviceRow updated = devices->first();
+        for (RoomRow& room : roomRows_) {
+            for (DeviceRow& device : room.devices) {
+                if (device.id == updated.id) {
+                    device = updated;
+                    clearPendingDeviceToggle(false);
+                    emit roomsChanged();
+                    setStatus({});
+                    return;
+                }
+            }
+        }
+        clearPendingDeviceToggle(true);
+        setStatus(tr("Couldn't update the device."));
+        return;
+    }
     if (op == QLatin1String("profile") || op == QLatin1String("profile-update")) {
         const std::optional<ProfileRow> profile = parseProfile(body);
         if (!profile.has_value() || profile->id != userId_) {
@@ -262,6 +325,9 @@ void SessionController::onFailed(const QString& op, quint64, int, const QString&
         || op == QLatin1String("profile") || op == QLatin1String("profile-update")
         || op == QLatin1String("rooms") || op == QLatin1String("room-insert")
         || op == QLatin1String("device-insert")) {
+        setStatus(message);
+    } else if (op == QLatin1String("device-on")) {
+        clearPendingDeviceToggle(true);
         setStatus(message);
     }
 }
@@ -346,6 +412,8 @@ void SessionController::clearLocal()
     firstName_.clear();
     city_.clear();
     roomRows_.clear();
+    pendingDeviceOnId_.clear();
+    previousDeviceOn_.reset();
     api_.setAccessToken({});
     if (wasSignedIn) {
         emit signedInChanged();
@@ -383,6 +451,25 @@ int SessionController::nextDevicePosition(const QString& roomId) const
         break;
     }
     return position;
+}
+
+void SessionController::clearPendingDeviceToggle(bool restore)
+{
+    if (pendingDeviceOnId_.isEmpty()) {
+        return;
+    }
+    if (restore && previousDeviceOn_.has_value()) {
+        for (RoomRow& room : roomRows_) {
+            for (DeviceRow& device : room.devices) {
+                if (device.id == pendingDeviceOnId_) {
+                    device.isOn = previousDeviceOn_;
+                }
+            }
+        }
+        emit roomsChanged();
+    }
+    pendingDeviceOnId_.clear();
+    previousDeviceOn_.reset();
 }
 
 void SessionController::setStatus(const QString& message)
