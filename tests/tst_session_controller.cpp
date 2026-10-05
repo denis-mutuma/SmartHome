@@ -30,6 +30,8 @@ struct AuthServerState
     QByteArray roomInsertRequest;
     QByteArray deviceInsertRequest;
     QByteArray deviceToggleRequest;
+    QByteArray deviceUpdateRequest;
+    QByteArray deviceDeleteRequest;
     QByteArray profileBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":null}])");
     QByteArray updatedProfileBody = QByteArrayLiteral(
@@ -112,18 +114,26 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 reason = QByteArrayLiteral("Created");
                 payload = state.insertedDeviceBody;
             } else if (requestLine.startsWith(QByteArrayLiteral("PATCH /rest/v1/devices?id=eq."))) {
-                state.deviceToggleRequest = *request;
-                if (state.failDeviceToggle) {
+                const QJsonObject patch = QJsonDocument::fromJson(
+                    request->mid(headerEnd + 4)).object();
+                QJsonObject row = QJsonDocument::fromJson(state.insertedDeviceBody).array().first().toObject();
+                if (patch.contains(QStringLiteral("name"))) {
+                    state.deviceUpdateRequest = *request;
+                    row.insert(QStringLiteral("name"), patch.value(QStringLiteral("name")));
+                    payload = QJsonDocument(QJsonArray{row}).toJson(QJsonDocument::Compact);
+                } else if (state.failDeviceToggle) {
+                    state.deviceToggleRequest = *request;
                     status = 500;
                     reason = QByteArrayLiteral("Internal Server Error");
                     payload = QByteArrayLiteral(R"({"message":"switch write rejected"})");
                 } else {
-                    const QJsonObject body = QJsonDocument::fromJson(
-                        request->mid(headerEnd + 4)).object();
-                    QJsonObject row = QJsonDocument::fromJson(state.insertedDeviceBody).array().first().toObject();
-                    row.insert(QStringLiteral("is_on"), body.value(QStringLiteral("is_on")));
+                    state.deviceToggleRequest = *request;
+                    row.insert(QStringLiteral("is_on"), patch.value(QStringLiteral("is_on")));
                     payload = QJsonDocument(QJsonArray{row}).toJson(QJsonDocument::Compact);
                 }
+            } else if (requestLine.startsWith(QByteArrayLiteral("DELETE /rest/v1/devices?id=eq."))) {
+                state.deviceDeleteRequest = *request;
+                payload = QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174020"}])");
             } else {
                 return;
             }
@@ -172,6 +182,7 @@ private slots:
     void loadsAndCreatesRooms();
     void createsDeviceInExistingRoom();
     void togglesDeviceAndRollsBackOnFailure();
+    void renamesAndDeletesDevice();
 };
 
 void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
@@ -472,6 +483,44 @@ void SessionControllerTest::togglesDeviceAndRollsBackOnFailure()
     QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices"))
         .toList().first().toMap().value(QStringLiteral("isOn")).toBool(), true);
     QCOMPARE(requestBody(state.deviceToggleRequest).value(QStringLiteral("is_on")).toBool(), false);
+}
+
+void SessionControllerTest::renamesAndDeletesDevice()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.roomsBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Desk light","kind":"light","is_on":false,"celsius":null,"reading_at":null,"position":0}]}])");
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+    const QString deviceId = QStringLiteral("123e4567-e89b-12d3-a456-426614174020");
+
+    QVERIFY(!controller.renameDevice(deviceId, QString()));
+    QVERIFY(state.deviceUpdateRequest.isEmpty());
+    QVERIFY(controller.renameDevice(deviceId, QStringLiteral(" Desk lamp ")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices"))
+        .toList().first().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Desk lamp"), 5000);
+    const qsizetype updateHeaderEnd = state.deviceUpdateRequest.indexOf(QByteArrayLiteral("\r\n\r\n"));
+    QVERIFY(state.deviceUpdateRequest.left(updateHeaderEnd).toLower()
+        .contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
+    QCOMPARE(requestBody(state.deviceUpdateRequest).value(QStringLiteral("name")).toString(),
+        QStringLiteral("Desk lamp"));
+
+    QVERIFY(!controller.deleteDevice(QStringLiteral("not-a-uuid")));
+    QVERIFY(state.deviceDeleteRequest.isEmpty());
+    QVERIFY(controller.deleteDevice(deviceId));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList().size(),
+        0, 5000);
+    QVERIFY(state.deviceDeleteRequest.startsWith(QByteArrayLiteral("DELETE /rest/v1/devices?id=eq.")));
+    QVERIFY(state.deviceDeleteRequest.toLower().contains(
+        QByteArrayLiteral("authorization: bearer access-token")));
 }
 
 QTEST_MAIN(SessionControllerTest)
