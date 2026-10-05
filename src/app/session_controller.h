@@ -44,6 +44,7 @@ public:
     Q_INVOKABLE bool signIn(const QString& email, const QString& password);
     Q_INVOKABLE bool registerAccount(const QString& firstName, const QString& email, const QString& password);
     Q_INVOKABLE void signOut();
+    Q_INVOKABLE void reload();
     Q_INVOKABLE bool saveSettings(const QString& firstName, const QString& city);
     Q_INVOKABLE bool createRoom(const QString& name);
     Q_INVOKABLE bool renameRoom(const QString& roomId, const QString& name);
@@ -71,6 +72,7 @@ private:
     void startRefresh();
     void applySession(const SessionTokens& session, bool isRefresh);
     void clearLocal();
+    void updatePolling();
     void walkStaleReadings();
     void updateWeather();
     int nextRoomPosition() const;
@@ -97,4 +99,5 @@ private:
     bool signedIn_ = false;
     bool refreshInFlight_ = false;
     QTimer refreshTimer_;
+    QTimer activeRefreshTimer_;
 };
