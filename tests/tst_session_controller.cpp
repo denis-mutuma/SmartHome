@@ -384,6 +384,7 @@ void SessionControllerTest::loadsAndSavesProfileSettings()
         directory.filePath(QStringLiteral("refresh-token.bin")), weatherEndpoints);
     QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
     QTRY_COMPARE_WITH_TIMEOUT(controller.firstName(), QStringLiteral("Amina"), 5000);
+    QVERIFY(controller.greeting().endsWith(QStringLiteral("Amina")));
     QCOMPARE(controller.city(), QString());
     QVERIFY(state.profileRequest.left(state.profileRequest.indexOf(QByteArrayLiteral("\r\n\r\n")))
         .toLower().contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
