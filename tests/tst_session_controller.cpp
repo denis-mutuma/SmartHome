@@ -23,6 +23,12 @@ struct AuthServerState
     QByteArray signupRequest;
     QByteArray refreshRequest;
     QByteArray logoutRequest;
+    QByteArray profileRequest;
+    QByteArray profileUpdateRequest;
+    QByteArray profileBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":null}])");
+    QByteArray updatedProfileBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina K","city":"Nairobi"}])");
     int refreshRequests = 0;
     int refreshStatus = 200;
 };
@@ -75,6 +81,12 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 status = 204;
                 reason = QByteArrayLiteral("No Content");
                 payload.clear();
+            } else if (path == QByteArrayLiteral("/rest/v1/profiles?select=id,first_name,city")) {
+                state.profileRequest = *request;
+                payload = state.profileBody;
+            } else if (requestLine.startsWith(QByteArrayLiteral("PATCH /rest/v1/profiles?id=eq."))) {
+                state.profileUpdateRequest = *request;
+                payload = state.updatedProfileBody;
             } else {
                 return;
             }
@@ -119,6 +131,7 @@ private slots:
     void restoresSessionWithRotatedRefreshToken();
     void clearsRejectedStoredSession();
     void refreshesNearExpirySessionOnce();
+    void loadsAndSavesProfileSettings();
 };
 
 void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
@@ -264,6 +277,41 @@ void SessionControllerTest::refreshesNearExpirySessionOnce()
     QCOMPARE(loadRefreshToken(tokenPath), QStringLiteral("rotated-refresh-token"));
     QCOMPARE(requestBody(state.refreshRequest).value(QStringLiteral("refresh_token")).toString(),
         QStringLiteral("old-refresh-token"));
+}
+
+void SessionControllerTest::loadsAndSavesProfileSettings()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.firstName(), QStringLiteral("Amina"), 5000);
+    QCOMPARE(controller.city(), QString());
+    QVERIFY(state.profileRequest.left(state.profileRequest.indexOf(QByteArrayLiteral("\r\n\r\n")))
+        .toLower().contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
+
+    QVERIFY(!controller.saveSettings(QString(), QStringLiteral("Nairobi")));
+    QVERIFY(!controller.statusMessage().isEmpty());
+    QVERIFY(state.profileUpdateRequest.isEmpty());
+    QVERIFY(!controller.saveSettings(QStringLiteral("Amina"), QString(81, QLatin1Char('x'))));
+    QVERIFY(state.profileUpdateRequest.isEmpty());
+
+    QVERIFY(controller.saveSettings(QStringLiteral(" Amina K "), QStringLiteral(" Nairobi ")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.firstName(), QStringLiteral("Amina K"), 5000);
+    QCOMPARE(controller.city(), QStringLiteral("Nairobi"));
+
+    const qsizetype headerEnd = state.profileUpdateRequest.indexOf(QByteArrayLiteral("\r\n\r\n"));
+    QVERIFY(state.profileUpdateRequest.left(headerEnd).toLower()
+        .contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
+    const QJsonObject body = requestBody(state.profileUpdateRequest);
+    QCOMPARE(body.value(QStringLiteral("first_name")).toString(), QStringLiteral("Amina K"));
+    QCOMPARE(body.value(QStringLiteral("city")).toString(), QStringLiteral("Nairobi"));
 }
 
 QTEST_MAIN(SessionControllerTest)

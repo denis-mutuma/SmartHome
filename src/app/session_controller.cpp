@@ -78,8 +78,42 @@ void SessionController::signOut()
     setStatus(tokenCleared ? QString() : tr("Could not clear the session."));
 }
 
+bool SessionController::saveSettings(const QString& firstName, const QString& city)
+{
+    if (!signedIn_) {
+        setStatus(tr("Sign in to manage your profile."));
+        return false;
+    }
+    const QString normalizedName = firstName.trimmed();
+    const QString normalizedCity = city.trimmed();
+    if (!isNameOk(normalizedName)) {
+        setStatus(tr("Use 1 to 40 characters for the name."));
+        return false;
+    }
+    if (!isCityOk(normalizedCity)) {
+        setStatus(tr("Use up to 80 characters for the city."));
+        return false;
+    }
+    setStatus({});
+    api_.updateProfile(userId_, normalizedName, normalizedCity);
+    return true;
+}
+
 void SessionController::onCompleted(const QString& op, quint64, int, const QByteArray& body)
 {
+    if (op == QLatin1String("profile") || op == QLatin1String("profile-update")) {
+        const std::optional<ProfileRow> profile = parseProfile(body);
+        if (!profile.has_value() || profile->id != userId_) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        userId_ = profile->id;
+        firstName_ = profile->firstName;
+        city_ = profile->city;
+        emit profileChanged();
+        setStatus({});
+        return;
+    }
     if (op != QLatin1String("login") && op != QLatin1String("signup") && op != QLatin1String("refresh")) {
         return;
     }
@@ -107,7 +141,8 @@ void SessionController::onFailed(const QString& op, quint64, int, const QString&
         clearRefreshToken(tokenFilePath_);
         clearLocal();
         setStatus(message);
-    } else if (op == QLatin1String("login") || op == QLatin1String("signup")) {
+    } else if (op == QLatin1String("login") || op == QLatin1String("signup")
+        || op == QLatin1String("profile") || op == QLatin1String("profile-update")) {
         setStatus(message);
     }
 }
@@ -153,6 +188,7 @@ void SessionController::applySession(const SessionTokens& session, bool isRefres
     const bool wasSignedIn = signedIn_;
     accessToken_ = session.accessToken;
     refreshToken_ = session.refreshToken;
+    userId_ = session.userId;
     accessTokenExpiresAt_ = jwtExpiryUtc(accessToken_);
     if (!accessTokenExpiresAt_.isValid() && session.expiresIn > 0) {
         accessTokenExpiresAt_ = QDateTime::currentDateTimeUtc().addSecs(session.expiresIn);
@@ -167,25 +203,36 @@ void SessionController::applySession(const SessionTokens& session, bool isRefres
     setStatus({});
     if (isRefresh) {
         api_.retryQueuedRequests();
+        if (wasSignedIn) {
+            return;
+        }
     }
+    api_.fetchProfile();
 }
 
 void SessionController::clearLocal()
 {
     const bool wasSignedIn = signedIn_;
     const bool hadEmail = !email_.isEmpty();
+    const bool hadProfile = !userId_.isEmpty() || !firstName_.isEmpty() || !city_.isEmpty();
     signedIn_ = false;
     accessToken_.clear();
     refreshToken_.clear();
     accessTokenExpiresAt_ = {};
     refreshInFlight_ = false;
     email_.clear();
+    userId_.clear();
+    firstName_.clear();
+    city_.clear();
     api_.setAccessToken({});
     if (wasSignedIn) {
         emit signedInChanged();
     }
     if (hadEmail) {
         emit emailChanged();
+    }
+    if (hadProfile) {
+        emit profileChanged();
     }
 }
 
