@@ -18,13 +18,14 @@ endif()
 qt_add_library(smarthome_core STATIC
     src/core/home_rules.cpp
     src/core/home_json.cpp
+    src/app/api_client.cpp
     src/app/token_store.cpp
 )
 target_include_directories(smarthome_core PUBLIC src/core src/app)
 if(WIN32)
     target_link_libraries(smarthome_core PUBLIC crypt32)
 endif()
-target_link_libraries(smarthome_core PUBLIC Qt6::Core)
+target_link_libraries(smarthome_core PUBLIC Qt6::Core Qt6::Network)
 if(MSVC)
     target_compile_options(smarthome_core PRIVATE /W4)
 else()
@@ -41,6 +42,9 @@ add_test(NAME home_json COMMAND tst_home_json)
 qt_add_executable(tst_token_store tests/tst_token_store.cpp)
 target_link_libraries(tst_token_store PRIVATE smarthome_core Qt6::Test)
 add_test(NAME token_store COMMAND tst_token_store)
+qt_add_executable(tst_api_client tests/tst_api_client.cpp)
+target_link_libraries(tst_api_client PRIVATE smarthome_core Qt6::Test)
+add_test(NAME api_client COMMAND tst_api_client)
 if(ANDROID)
     set_property(TARGET tst_token_store PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
         "${CMAKE_SOURCE_DIR}/android")
@@ -57,6 +61,9 @@ if(WIN32)
         "PATH=path_list_prepend:${_qt_prefix}/bin"
         "PATH=path_list_prepend:${_cxx_bin}")
     set_property(TEST token_store PROPERTY ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${_qt_prefix}/bin"
+        "PATH=path_list_prepend:${_cxx_bin}")
+    set_property(TEST api_client PROPERTY ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${_qt_prefix}/bin"
         "PATH=path_list_prepend:${_cxx_bin}")
 endif()
