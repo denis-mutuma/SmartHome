@@ -15,11 +15,10 @@ int main(int argc, char *argv[])
     app.setApplicationDisplayName("SmartHome");
 
     QQmlApplicationEngine engine;
-    const QUrl url(u"qrc:/SmartHome/Main.qml"_qs);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed,
         &app, []() { QCoreApplication::exit(-1); },
         Qt::QueuedConnection);
-    engine.load(url);
+    engine.loadFromModule("SmartHome", "Main");
 
     return app.exec();
 }
