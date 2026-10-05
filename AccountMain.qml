@@ -15,6 +15,18 @@ Window {
     visible: true
     title: qsTr("SmartHome")
     color: "#18171C"
+    property string selectedRoomId: ""
+
+    function roomById(roomId) {
+        for (var index = 0; index < session.rooms.length; ++index) {
+            if (session.rooms[index].id === roomId) {
+                return session.rooms[index]
+            }
+        }
+        return null
+    }
+
+    readonly property var selectedRoom: roomById(selectedRoomId)
 
     SessionController {
         id: session
@@ -38,7 +50,7 @@ Window {
         StackLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 520
-            currentIndex: session.signedIn ? 1 : 0
+            currentIndex: !session.signedIn ? 0 : (root.selectedRoom ? 2 : 1)
 
             Item {
                 ColumnLayout {
@@ -216,18 +228,21 @@ Window {
                         spacing: 8
                         model: session.rooms
 
-                        delegate: Rectangle {
+                        delegate: Button {
                             id: roomDelegate
                             required property var modelData
                             width: roomList.width
                             height: 58
-                            color: "#2F2F37"
-                            radius: 4
+                            Accessible.name: qsTr("Open room %1").arg(modelData.name)
+                            onClicked: root.selectedRoomId = modelData.id
 
-                            RowLayout {
-                                anchors.fill: parent
-                                anchors.leftMargin: 14
-                                anchors.rightMargin: 14
+                            background: Rectangle {
+                                color: "#2F2F37"
+                                radius: 4
+                            }
+
+                            contentItem: RowLayout {
+                                spacing: 10
 
                                 Label {
                                     Layout.fillWidth: true
@@ -305,6 +320,145 @@ Window {
                             text: qsTr("Sign out")
                             Accessible.name: qsTr("Sign out")
                             onClicked: session.signOut()
+
+                            background: Rectangle {
+                                color: "#2F2F37"
+                                radius: 4
+                            }
+                        }
+                    }
+                }
+            }
+
+            Item {
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 12
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        Button {
+                            text: qsTr("Back")
+                            Accessible.name: qsTr("Back to rooms")
+                            onClicked: root.selectedRoomId = ""
+
+                            background: Rectangle {
+                                color: "#2F2F37"
+                                radius: 4
+                            }
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: root.selectedRoom ? root.selectedRoom.name : qsTr("Room")
+                            color: "#FFFFFF"
+                            font.pixelSize: 22
+                            font.bold: true
+                            elide: Text.ElideRight
+                            Accessible.name: qsTr("Room name")
+                        }
+                    }
+
+                    Label {
+                        visible: root.selectedRoom && root.selectedRoom.devices.length === 0
+                        Layout.fillWidth: true
+                        text: qsTr("No devices in this room yet.")
+                        color: "#FFFFFF"
+                        wrapMode: Text.Wrap
+                        Accessible.name: qsTr("Empty devices message")
+                    }
+
+                    ListView {
+                        id: deviceList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: 0
+                        clip: true
+                        spacing: 8
+                        model: root.selectedRoom ? root.selectedRoom.devices : []
+
+                        delegate: Rectangle {
+                            id: deviceDelegate
+                            required property var modelData
+                            width: deviceList.width
+                            height: 66
+                            color: "#2F2F37"
+                            radius: 4
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 14
+                                spacing: 12
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: deviceDelegate.modelData.name
+                                        color: "#FFFFFF"
+                                        elide: Text.ElideRight
+                                        Accessible.name: qsTr("Device name")
+                                    }
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: deviceDelegate.modelData.kind
+                                        color: "#FFFFFF"
+                                        Accessible.name: qsTr("Device type")
+                                    }
+                                }
+
+                                Label {
+                                    visible: deviceDelegate.modelData.kind === "thermometer"
+                                    text: deviceDelegate.modelData.celsius === null
+                                        ? qsTr("No reading")
+                                        : qsTr("%1 °C").arg(Number(deviceDelegate.modelData.celsius).toFixed(1))
+                                    color: "#FFFFFF"
+                                    Accessible.name: qsTr("Temperature reading")
+                                }
+
+                                Switch {
+                                    id: deviceSwitch
+                                    visible: deviceDelegate.modelData.kind !== "thermometer"
+                                    Accessible.name: qsTr("%1 power").arg(deviceDelegate.modelData.name)
+                                    onToggled: session.setDeviceOn(deviceDelegate.modelData.deviceId, checked)
+
+                                    Binding {
+                                        target: deviceSwitch
+                                        property: "checked"
+                                        value: Boolean(deviceDelegate.modelData.isOn)
+                                        when: !deviceSwitch.down
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: session.statusMessage
+                            visible: session.statusMessage.length > 0
+                            color: "#FFFFFF"
+                            wrapMode: Text.Wrap
+                            Accessible.name: qsTr("Account status")
+                        }
+
+                        Button {
+                            text: qsTr("Sign out")
+                            Accessible.name: qsTr("Sign out")
+                            onClicked: {
+                                root.selectedRoomId = ""
+                                session.signOut()
+                            }
 
                             background: Rectangle {
                                 color: "#2F2F37"
