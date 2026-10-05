@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRandomGenerator>
+#include <QTime>
 #include <QVariant>
 #include <QVariantList>
 #include <QVariantMap>
@@ -51,6 +52,22 @@ QString SessionController::weatherIcon() const
         return {};
     }
     return QStringLiteral("qrc:/qt/qml/SmartHome/assets/icons/") + weatherIconFile_;
+}
+
+QString SessionController::greeting() const
+{
+    const QString band = greetingFor(QTime::currentTime());
+    QString salutation;
+    if (band == QLatin1String("Good morning,")) {
+        salutation = tr("Good morning,");
+    } else if (band == QLatin1String("Good afternoon,")) {
+        salutation = tr("Good afternoon,");
+    } else if (band == QLatin1String("Good evening,")) {
+        salutation = tr("Good evening,");
+    } else {
+        salutation = tr("Good night,");
+    }
+    return firstName_.isEmpty() ? salutation : salutation + QLatin1Char(' ') + firstName_;
 }
 
 bool SessionController::signIn(const QString& email, const QString& password)

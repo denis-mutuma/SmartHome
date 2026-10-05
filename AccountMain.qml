@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -35,7 +37,7 @@ Window {
 
         StackLayout {
             Layout.fillWidth: true
-            Layout.preferredHeight: 410
+            Layout.preferredHeight: 520
             currentIndex: session.signedIn ? 1 : 0
 
             Item {
@@ -147,23 +149,135 @@ Window {
 
             Item {
                 ColumnLayout {
-                    anchors.centerIn: parent
-                    width: Math.min(parent.width, 380)
-                    spacing: 16
+                    anchors.fill: parent
+                    spacing: 12
 
                     Label {
                         Layout.fillWidth: true
-                        text: qsTr("Signed in")
+                        text: session.greeting
                         color: "#FFFFFF"
-                        font.pixelSize: 28
+                        font.pixelSize: 26
+                        font.bold: true
+                        Accessible.name: qsTr("Greeting")
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 10
+
+                        Image {
+                            visible: session.weatherIcon.length > 0
+                            source: session.weatherIcon
+                            sourceSize.width: 24
+                            sourceSize.height: 24
+                            fillMode: Image.PreserveAspectFit
+                            Accessible.name: qsTr("Weather icon")
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: session.weatherLine.length > 0 ? session.weatherLine : qsTr("Weather unavailable")
+                            color: "#FFFFFF"
+                            wrapMode: Text.Wrap
+                            Accessible.name: qsTr("Current weather")
+                        }
+
+                        Label {
+                            text: session.city
+                            color: "#FFFFFF"
+                            Accessible.name: qsTr("Saved city")
+                        }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("Rooms")
+                        color: "#FFFFFF"
+                        font.pixelSize: 16
                         font.bold: true
                     }
 
                     Label {
                         Layout.fillWidth: true
-                        text: session.email
+                        visible: session.rooms.length === 0
+                        text: qsTr("No rooms yet. Add your first room below.")
                         color: "#FFFFFF"
-                        Accessible.name: qsTr("Signed-in email")
+                        wrapMode: Text.Wrap
+                        Accessible.name: qsTr("Empty rooms message")
+                    }
+
+                    ListView {
+                        id: roomList
+                        visible: session.rooms.length > 0
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: 0
+                        clip: true
+                        spacing: 8
+                        model: session.rooms
+
+                        delegate: Rectangle {
+                            id: roomDelegate
+                            required property var modelData
+                            width: roomList.width
+                            height: 58
+                            color: "#2F2F37"
+                            radius: 4
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 14
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: roomDelegate.modelData.name
+                                    color: "#FFFFFF"
+                                    Accessible.name: qsTr("Room name")
+                                }
+
+                                Label {
+                                    text: qsTr("%1 devices").arg(roomDelegate.modelData.deviceCount)
+                                    color: "#FFFFFF"
+                                    Accessible.name: qsTr("Device count")
+                                }
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        TextField {
+                            id: roomNameInput
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 46
+                            placeholderText: qsTr("Room name")
+                            Accessible.name: qsTr("Room name")
+                            color: "#FFFFFF"
+
+                            background: Rectangle {
+                                color: "#2F2F37"
+                                radius: 4
+                            }
+                        }
+
+                        Button {
+                            Layout.preferredHeight: 46
+                            text: qsTr("Add room")
+                            Accessible.name: qsTr("Add room")
+                            onClicked: {
+                                if (session.createRoom(roomNameInput.text)) {
+                                    roomNameInput.clear()
+                                }
+                            }
+
+                            background: Rectangle {
+                                color: "#536DED"
+                                radius: 4
+                            }
+                        }
                     }
 
                     Label {
@@ -175,16 +289,27 @@ Window {
                         Accessible.name: qsTr("Account status")
                     }
 
-                    Button {
+                    RowLayout {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 50
-                        text: qsTr("Sign out")
-                        Accessible.name: qsTr("Sign out")
-                        onClicked: session.signOut()
+                        spacing: 8
 
-                        background: Rectangle {
-                            color: "#2F2F37"
-                            radius: 4
+                        Label {
+                            Layout.fillWidth: true
+                            text: session.email
+                            color: "#FFFFFF"
+                            elide: Text.ElideRight
+                            Accessible.name: qsTr("Signed-in email")
+                        }
+
+                        Button {
+                            text: qsTr("Sign out")
+                            Accessible.name: qsTr("Sign out")
+                            onClicked: session.signOut()
+
+                            background: Rectangle {
+                                color: "#2F2F37"
+                                radius: 4
+                            }
                         }
                     }
                 }

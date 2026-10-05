@@ -17,6 +17,7 @@ class SessionController : public QObject
     QML_ELEMENT
     Q_PROPERTY(bool signedIn READ signedIn NOTIFY signedInChanged)
     Q_PROPERTY(QString email READ email NOTIFY emailChanged)
+    Q_PROPERTY(QString greeting READ greeting NOTIFY profileChanged)
     Q_PROPERTY(QString firstName READ firstName NOTIFY profileChanged)
     Q_PROPERTY(QString city READ city NOTIFY profileChanged)
     Q_PROPERTY(QString weatherLine READ weatherLine NOTIFY weatherChanged)
@@ -32,6 +33,7 @@ public:
 
     bool signedIn() const { return signedIn_; }
     QString email() const { return email_; }
+    QString greeting() const;
     QString firstName() const { return firstName_; }
     QString city() const { return city_; }
     QString weatherLine() const { return weatherLine_; }
