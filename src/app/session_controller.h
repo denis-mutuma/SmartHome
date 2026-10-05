@@ -15,6 +15,8 @@ class SessionController : public QObject
     QML_ELEMENT
     Q_PROPERTY(bool signedIn READ signedIn NOTIFY signedInChanged)
     Q_PROPERTY(QString email READ email NOTIFY emailChanged)
+    Q_PROPERTY(QString firstName READ firstName NOTIFY profileChanged)
+    Q_PROPERTY(QString city READ city NOTIFY profileChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusChanged)
 
 public:
@@ -23,15 +25,19 @@ public:
 
     bool signedIn() const { return signedIn_; }
     QString email() const { return email_; }
+    QString firstName() const { return firstName_; }
+    QString city() const { return city_; }
     QString statusMessage() const { return statusMessage_; }
 
     Q_INVOKABLE bool signIn(const QString& email, const QString& password);
     Q_INVOKABLE bool registerAccount(const QString& firstName, const QString& email, const QString& password);
     Q_INVOKABLE void signOut();
+    Q_INVOKABLE bool saveSettings(const QString& firstName, const QString& city);
 
 signals:
     void signedInChanged();
     void emailChanged();
+    void profileChanged();
     void statusChanged();
 
 private slots:
@@ -52,6 +58,9 @@ private:
     QString refreshToken_;
     QDateTime accessTokenExpiresAt_;
     QString email_;
+    QString userId_;
+    QString firstName_;
+    QString city_;
     QString statusMessage_;
     bool signedIn_ = false;
     bool refreshInFlight_ = false;
