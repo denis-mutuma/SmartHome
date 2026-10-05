@@ -395,6 +395,21 @@ Window {
                             elide: Text.ElideRight
                             Accessible.name: qsTr("Room name")
                         }
+
+                        Button {
+                            text: qsTr("Add device")
+                            Accessible.name: qsTr("Add device")
+                            onClicked: {
+                                deviceNameInput.clear()
+                                deviceKind.currentIndex = 0
+                                createDeviceDialog.open()
+                            }
+
+                            background: Rectangle {
+                                color: "#536DED"
+                                radius: 4
+                            }
+                        }
                     }
 
                     Label {
@@ -641,6 +656,48 @@ Window {
         MenuItem {
             text: qsTr("Delete")
             onTriggered: deleteDialog.open()
+        }
+    }
+
+    Dialog {
+        id: createDeviceDialog
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 32, 360)
+        modal: true
+        title: qsTr("Add device")
+        standardButtons: Dialog.Save | Dialog.Cancel
+
+        contentItem: ColumnLayout {
+            spacing: 10
+
+            TextField {
+                id: deviceNameInput
+                Layout.fillWidth: true
+                placeholderText: qsTr("Device name")
+                Accessible.name: qsTr("Device name")
+                color: "#FFFFFF"
+
+                background: Rectangle {
+                    color: "#2F2F37"
+                    radius: 4
+                }
+            }
+
+            ComboBox {
+                id: deviceKind
+                Layout.fillWidth: true
+                model: [qsTr("Light"), qsTr("Plug"), qsTr("Thermometer")]
+                Accessible.name: qsTr("Device type")
+            }
+        }
+
+        onAccepted: {
+            if (!root.selectedRoom) {
+                return
+            }
+            var kind = deviceKind.currentIndex === 0 ? "light"
+                : deviceKind.currentIndex === 1 ? "plug" : "thermometer"
+            session.createDevice(root.selectedRoom.id, deviceNameInput.text, kind)
         }
     }
 
