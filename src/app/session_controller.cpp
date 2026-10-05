@@ -22,8 +22,15 @@ SessionController::SessionController(QObject* parent)
 }
 
 SessionController::SessionController(QString baseUrl, QString anonKey, QString tokenFilePath, QObject* parent)
+    : SessionController(std::move(baseUrl), std::move(anonKey), std::move(tokenFilePath),
+          ApiClient::WeatherEndpoints{}, parent)
+{
+}
+
+SessionController::SessionController(QString baseUrl, QString anonKey, QString tokenFilePath,
+    ApiClient::WeatherEndpoints weatherEndpoints, QObject* parent)
     : QObject(parent)
-    , api_(std::move(baseUrl), std::move(anonKey))
+    , api_(std::move(baseUrl), std::move(anonKey), std::move(weatherEndpoints))
     , tokenFilePath_(std::move(tokenFilePath))
 {
     connect(&api_, &ApiClient::completed, this, &SessionController::onCompleted);
@@ -36,6 +43,14 @@ SessionController::SessionController(QString baseUrl, QString anonKey, QString t
     if (!refreshToken_.isEmpty()) {
         startRefresh();
     }
+}
+
+QString SessionController::weatherIcon() const
+{
+    if (weatherIconFile_.isEmpty()) {
+        return {};
+    }
+    return QStringLiteral("qrc:/qt/qml/SmartHome/assets/icons/") + weatherIconFile_;
 }
 
 bool SessionController::signIn(const QString& email, const QString& password)
@@ -323,6 +338,30 @@ QVariantList SessionController::rooms() const
 
 void SessionController::onCompleted(const QString& op, quint64, int, const QByteArray& body)
 {
+    if (op == QLatin1String("geocode")) {
+        const std::optional<GeoHit> hit = parseGeocoding(body);
+        if (!hit.has_value()) {
+            weatherLine_ = tr("Couldn't find that city.");
+            weatherIconFile_.clear();
+            emit weatherChanged();
+            return;
+        }
+        api_.forecast(hit->latitude, hit->longitude);
+        return;
+    }
+    if (op == QLatin1String("forecast")) {
+        const std::optional<ForecastNow> forecast = parseForecast(body);
+        if (!forecast.has_value()) {
+            weatherLine_ = tr("Weather unavailable.");
+            weatherIconFile_.clear();
+        } else {
+            weatherLine_ = tr("%1 · %2 °C").arg(weatherLabel(forecast->weatherCode))
+                .arg(forecast->temperatureCelsius, 0, 'f', 1);
+            weatherIconFile_ = weatherIconFile(forecast->weatherCode, forecast->isDay);
+        }
+        emit weatherChanged();
+        return;
+    }
     if (op == QLatin1String("rooms")) {
         const std::optional<QList<RoomRow>> rooms = parseRooms(body);
         if (!rooms.has_value()) {
@@ -508,10 +547,14 @@ void SessionController::onCompleted(const QString& op, quint64, int, const QByte
             setStatus(tr("The service could not complete the request."));
             return;
         }
+        const bool cityChanged = city_ != profile->city;
         userId_ = profile->id;
         firstName_ = profile->firstName;
         city_ = profile->city;
         emit profileChanged();
+        if (cityChanged) {
+            updateWeather();
+        }
         setStatus({});
         return;
     }
@@ -554,6 +597,14 @@ void SessionController::onFailed(const QString& op, quint64, int, const QString&
     } else if (op == QLatin1String("device-reading")) {
         pendingReadingId_.clear();
         setStatus(message);
+    } else if (op == QLatin1String("geocode")) {
+        weatherLine_ = tr("Couldn't find that city.");
+        weatherIconFile_.clear();
+        emit weatherChanged();
+    } else if (op == QLatin1String("forecast")) {
+        weatherLine_ = tr("Weather unavailable.");
+        weatherIconFile_.clear();
+        emit weatherChanged();
     } else if (op == QLatin1String("device-update") || op == QLatin1String("device-delete")) {
         setStatus(message);
     }
@@ -628,6 +679,7 @@ void SessionController::clearLocal()
     const bool wasSignedIn = signedIn_;
     const bool hadEmail = !email_.isEmpty();
     const bool hadProfile = !userId_.isEmpty() || !firstName_.isEmpty() || !city_.isEmpty();
+    const bool hadWeather = !weatherLine_.isEmpty() || !weatherIconFile_.isEmpty();
     const bool hadRooms = !roomRows_.isEmpty();
     signedIn_ = false;
     accessToken_.clear();
@@ -638,6 +690,8 @@ void SessionController::clearLocal()
     userId_.clear();
     firstName_.clear();
     city_.clear();
+    weatherLine_.clear();
+    weatherIconFile_.clear();
     roomRows_.clear();
     pendingDeviceOnId_.clear();
     previousDeviceOn_.reset();
@@ -651,6 +705,9 @@ void SessionController::clearLocal()
     }
     if (hadProfile) {
         emit profileChanged();
+    }
+    if (hadWeather) {
+        emit weatherChanged();
     }
     if (hadRooms) {
         emit roomsChanged();
@@ -702,6 +759,17 @@ void SessionController::walkStaleReadings()
             return;
         }
     }
+}
+
+void SessionController::updateWeather()
+{
+    if (city_.isEmpty()) {
+        weatherLine_.clear();
+        weatherIconFile_.clear();
+        emit weatherChanged();
+        return;
+    }
+    api_.geocode(city_);
 }
 
 void SessionController::clearPendingDeviceToggle(bool restore)

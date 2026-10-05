@@ -16,7 +16,14 @@ class ApiClient : public QObject
     Q_OBJECT
 
 public:
+    struct WeatherEndpoints
+    {
+        QUrl geocoding{QStringLiteral("https://geocoding-api.open-meteo.com/v1/search")};
+        QUrl forecast{QStringLiteral("https://api.open-meteo.com/v1/forecast")};
+    };
+
     ApiClient(QString baseUrl, QString anonKey, QObject* parent = nullptr);
+    ApiClient(QString baseUrl, QString anonKey, WeatherEndpoints weatherEndpoints, QObject* parent = nullptr);
 
     void setAccessToken(const QString& token);
     void cancelPendingRequests();
@@ -73,6 +80,7 @@ private:
     QString baseUrl_;
     QString anonKey_;
     QString accessToken_;
+    WeatherEndpoints weatherEndpoints_;
     QHash<quint64, PendingRequest> pendingRequests_;
     QList<quint64> retryQueue_;
     quint64 nextRequestId_ = 0;

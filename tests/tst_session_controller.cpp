@@ -35,6 +35,8 @@ struct AuthServerState
     QByteArray deviceReadingRequest;
     QByteArray deviceUpdateRequest;
     QByteArray deviceDeleteRequest;
+    QByteArray geocodingRequest;
+    QByteArray forecastRequest;
     QByteArray profileBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":null}])");
     QByteArray updatedProfileBody = QByteArrayLiteral(
@@ -46,6 +48,10 @@ struct AuthServerState
         R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Lounge","position":0}])");
     QByteArray insertedDeviceBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Desk light","kind":"light","is_on":false,"celsius":null,"reading_at":null,"position":0}])");
+    QByteArray geocodingBody = QByteArrayLiteral(
+        R"({"results":[{"name":"Nairobi","latitude":-1.29,"longitude":36.82}]})");
+    QByteArray forecastBody = QByteArrayLiteral(
+        R"({"current":{"temperature_2m":20.9,"weather_code":2,"is_day":1}})");
     bool failDeviceToggle = false;
     int refreshRequests = 0;
     int refreshStatus = 200;
@@ -156,6 +162,12 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
             } else if (requestLine.startsWith(QByteArrayLiteral("DELETE /rest/v1/devices?id=eq."))) {
                 state.deviceDeleteRequest = *request;
                 payload = QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174020"}])");
+            } else if (requestLine.startsWith(QByteArrayLiteral("GET /geocode?"))) {
+                state.geocodingRequest = *request;
+                payload = state.geocodingBody;
+            } else if (requestLine.startsWith(QByteArrayLiteral("GET /forecast?"))) {
+                state.forecastRequest = *request;
+                payload = state.forecastBody;
             } else {
                 return;
             }
@@ -207,6 +219,7 @@ private slots:
     void renamesAndDeletesDevice();
     void renamesAndDeletesRoom();
     void updatesOnlyStaleThermometer();
+    void loadsWeatherForProfileCity();
 };
 
 void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
@@ -363,8 +376,12 @@ void SessionControllerTest::loadsAndSavesProfileSettings()
     AuthServerState state{sessionResponse()};
     startAuthServer(server, state);
 
-    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
-        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    const QString baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+    ApiClient::WeatherEndpoints weatherEndpoints{
+        QUrl(baseUrl + QStringLiteral("/geocode")),
+        QUrl(baseUrl + QStringLiteral("/forecast"))};
+    SessionController controller(baseUrl, QStringLiteral("public-anon-key"),
+        directory.filePath(QStringLiteral("refresh-token.bin")), weatherEndpoints);
     QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
     QTRY_COMPARE_WITH_TIMEOUT(controller.firstName(), QStringLiteral("Amina"), 5000);
     QCOMPARE(controller.city(), QString());
@@ -635,6 +652,34 @@ void SessionControllerTest::updatesOnlyStaleThermometer()
     QVERIFY(QDateTime::fromString(reading.value(QStringLiteral("reading_at")).toString(), Qt::ISODateWithMs).isValid());
     QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
         .at(1).toMap().value(QStringLiteral("celsius")).toDouble(), 22.4);
+}
+
+void SessionControllerTest::loadsWeatherForProfileCity()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.profileBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":"Nairobi"}])");
+    startAuthServer(server, state);
+
+    const QString baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+    ApiClient::WeatherEndpoints weatherEndpoints{
+        QUrl(baseUrl + QStringLiteral("/geocode")),
+        QUrl(baseUrl + QStringLiteral("/forecast"))};
+    SessionController controller(baseUrl, QStringLiteral("public-anon-key"),
+        directory.filePath(QStringLiteral("refresh-token.bin")), weatherEndpoints);
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.weatherLine(), QStringLiteral("Partly cloudy · 20.9 °C"), 5000);
+
+    QVERIFY(state.geocodingRequest.contains(QByteArrayLiteral("name=Nairobi")));
+    QVERIFY(state.forecastRequest.contains(QByteArrayLiteral("latitude=-1.290000")));
+    QVERIFY(state.forecastRequest.contains(QByteArrayLiteral("longitude=36.820000")));
+    QVERIFY(!state.geocodingRequest.toLower().contains(QByteArrayLiteral("authorization:")));
+    QVERIFY(!state.forecastRequest.toLower().contains(QByteArrayLiteral("authorization:")));
+    QCOMPARE(controller.weatherIcon(), QStringLiteral("qrc:/qt/qml/SmartHome/assets/icons/sun-cloud.svg"));
 }
 
 QTEST_MAIN(SessionControllerTest)

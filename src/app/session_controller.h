@@ -19,17 +19,23 @@ class SessionController : public QObject
     Q_PROPERTY(QString email READ email NOTIFY emailChanged)
     Q_PROPERTY(QString firstName READ firstName NOTIFY profileChanged)
     Q_PROPERTY(QString city READ city NOTIFY profileChanged)
+    Q_PROPERTY(QString weatherLine READ weatherLine NOTIFY weatherChanged)
+    Q_PROPERTY(QString weatherIcon READ weatherIcon NOTIFY weatherChanged)
     Q_PROPERTY(QVariantList rooms READ rooms NOTIFY roomsChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusChanged)
 
 public:
     explicit SessionController(QObject* parent = nullptr);
     SessionController(QString baseUrl, QString anonKey, QString tokenFilePath, QObject* parent = nullptr);
+    SessionController(QString baseUrl, QString anonKey, QString tokenFilePath,
+        ApiClient::WeatherEndpoints weatherEndpoints, QObject* parent = nullptr);
 
     bool signedIn() const { return signedIn_; }
     QString email() const { return email_; }
     QString firstName() const { return firstName_; }
     QString city() const { return city_; }
+    QString weatherLine() const { return weatherLine_; }
+    QString weatherIcon() const;
     QVariantList rooms() const;
     QString statusMessage() const { return statusMessage_; }
 
@@ -49,6 +55,7 @@ signals:
     void signedInChanged();
     void emailChanged();
     void profileChanged();
+    void weatherChanged();
     void roomsChanged();
     void statusChanged();
 
@@ -63,6 +70,7 @@ private:
     void applySession(const SessionTokens& session, bool isRefresh);
     void clearLocal();
     void walkStaleReadings();
+    void updateWeather();
     int nextRoomPosition() const;
     int nextDevicePosition(const QString& roomId) const;
     void clearPendingDeviceToggle(bool restore);
@@ -77,6 +85,8 @@ private:
     QString userId_;
     QString firstName_;
     QString city_;
+    QString weatherLine_;
+    QString weatherIconFile_;
     QList<RoomRow> roomRows_;
     QString pendingDeviceOnId_;
     QString pendingReadingId_;
