@@ -18,9 +18,13 @@ namespace {
 struct AuthServerState
 {
     QByteArray sessionBody;
+    QByteArray refreshBody;
     QByteArray loginRequest;
     QByteArray signupRequest;
+    QByteArray refreshRequest;
     QByteArray logoutRequest;
+    int refreshRequests = 0;
+    int refreshStatus = 200;
 };
 
 void startAuthServer(QTcpServer& server, AuthServerState& state)
@@ -60,6 +64,12 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 state.loginRequest = *request;
             } else if (path == QByteArrayLiteral("/auth/v1/signup")) {
                 state.signupRequest = *request;
+            } else if (path == QByteArrayLiteral("/auth/v1/token?grant_type=refresh_token")) {
+                ++state.refreshRequests;
+                state.refreshRequest = *request;
+                status = state.refreshStatus;
+                reason = status == 401 ? QByteArrayLiteral("Unauthorized") : QByteArrayLiteral("OK");
+                payload = state.refreshBody.isEmpty() ? state.sessionBody : state.refreshBody;
             } else if (path == QByteArrayLiteral("/auth/v1/logout")) {
                 state.logoutRequest = *request;
                 status = 204;
@@ -77,12 +87,13 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
     });
 }
 
-QByteArray sessionResponse()
+QByteArray sessionResponse(QString accessToken = QStringLiteral("access-token"),
+    QString refreshToken = QStringLiteral("refresh-token"), int expiresIn = 3600)
 {
     return QJsonDocument(QJsonObject{
-        {QStringLiteral("access_token"), QStringLiteral("access-token")},
-        {QStringLiteral("refresh_token"), QStringLiteral("refresh-token")},
-        {QStringLiteral("expires_in"), 3600},
+        {QStringLiteral("access_token"), std::move(accessToken)},
+        {QStringLiteral("refresh_token"), std::move(refreshToken)},
+        {QStringLiteral("expires_in"), expiresIn},
         {QStringLiteral("user"), QJsonObject{
             {QStringLiteral("id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174000")},
             {QStringLiteral("email"), QStringLiteral("person@example.com")}}}})
@@ -105,6 +116,9 @@ private slots:
     void signInPersistsRefreshTokenAndSignOutClearsIt();
     void registerSendsNormalizedAccountDetails();
     void rejectsInvalidCredentials();
+    void restoresSessionWithRotatedRefreshToken();
+    void clearsRejectedStoredSession();
+    void refreshesNearExpirySessionOnce();
 };
 
 void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
@@ -178,6 +192,78 @@ void SessionControllerTest::rejectsInvalidCredentials()
         QStringLiteral("correct-horse")));
     QVERIFY(!controller.signedIn());
     QVERIFY(loadRefreshToken(directory.filePath(QStringLiteral("refresh-token.bin"))).isEmpty());
+}
+
+void SessionControllerTest::restoresSessionWithRotatedRefreshToken()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString tokenPath = directory.filePath(QStringLiteral("refresh-token.bin"));
+    QVERIFY(saveRefreshToken(QStringLiteral("old-refresh-token"), tokenPath));
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.refreshBody = sessionResponse(QStringLiteral("new-access-token"),
+        QStringLiteral("rotated-refresh-token"));
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), tokenPath);
+    QTRY_VERIFY_WITH_TIMEOUT(controller.signedIn(), 5000);
+
+    QCOMPARE(controller.email(), QStringLiteral("person@example.com"));
+    QCOMPARE(loadRefreshToken(tokenPath), QStringLiteral("rotated-refresh-token"));
+    QCOMPARE(state.refreshRequests, 1);
+    QCOMPARE(requestBody(state.refreshRequest).value(QStringLiteral("refresh_token")).toString(),
+        QStringLiteral("old-refresh-token"));
+}
+
+void SessionControllerTest::clearsRejectedStoredSession()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString tokenPath = directory.filePath(QStringLiteral("refresh-token.bin"));
+    QVERIFY(saveRefreshToken(QStringLiteral("expired-refresh-token"), tokenPath));
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{QByteArrayLiteral(R"({"message":"invalid refresh token"})")};
+    state.refreshStatus = 401;
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), tokenPath);
+    QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 1, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(loadRefreshToken(tokenPath).isEmpty(), 5000);
+    QVERIFY(!controller.signedIn());
+}
+
+void SessionControllerTest::refreshesNearExpirySessionOnce()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString tokenPath = directory.filePath(QStringLiteral("refresh-token.bin"));
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse(QStringLiteral("short-lived-access-token"),
+        QStringLiteral("old-refresh-token"), 30)};
+    state.refreshBody = sessionResponse(QStringLiteral("new-access-token"),
+        QStringLiteral("rotated-refresh-token"));
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), tokenPath);
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_VERIFY_WITH_TIMEOUT(controller.signedIn(), 5000);
+    QVERIFY(QMetaObject::invokeMethod(&controller, "refreshIfNeeded", Qt::DirectConnection));
+    QVERIFY(QMetaObject::invokeMethod(&controller, "refreshIfNeeded", Qt::DirectConnection));
+    QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 1, 5000);
+
+    QCOMPARE(loadRefreshToken(tokenPath), QStringLiteral("rotated-refresh-token"));
+    QCOMPARE(requestBody(state.refreshRequest).value(QStringLiteral("refresh_token")).toString(),
+        QStringLiteral("old-refresh-token"));
 }
 
 QTEST_MAIN(SessionControllerTest)
