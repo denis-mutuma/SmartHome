@@ -3,8 +3,10 @@
 #include "api_client.h"
 #include "home_json.h"
 
+#include <QDateTime>
 #include <QObject>
 #include <QString>
+#include <QTimer>
 #include <QtQml/qqmlregistration.h>
 
 class SessionController : public QObject
@@ -32,17 +34,26 @@ signals:
     void emailChanged();
     void statusChanged();
 
+private slots:
+    void refreshIfNeeded();
+
 private:
     void onCompleted(const QString& op, quint64 requestId, int status, const QByteArray& body);
     void onFailed(const QString& op, quint64 requestId, int status, const QString& message);
-    void applySession(const SessionTokens& session);
+    void onAuthenticationRequired(const QString& op, quint64 requestId);
+    void startRefresh();
+    void applySession(const SessionTokens& session, bool isRefresh);
     void clearLocal();
     void setStatus(const QString& message);
 
     ApiClient api_;
     QString tokenFilePath_;
     QString accessToken_;
+    QString refreshToken_;
+    QDateTime accessTokenExpiresAt_;
     QString email_;
     QString statusMessage_;
     bool signedIn_ = false;
+    bool refreshInFlight_ = false;
+    QTimer refreshTimer_;
 };
