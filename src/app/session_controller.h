@@ -62,6 +62,7 @@ private:
     void startRefresh();
     void applySession(const SessionTokens& session, bool isRefresh);
     void clearLocal();
+    void walkStaleReadings();
     int nextRoomPosition() const;
     int nextDevicePosition(const QString& roomId) const;
     void clearPendingDeviceToggle(bool restore);
@@ -78,6 +79,7 @@ private:
     QString city_;
     QList<RoomRow> roomRows_;
     QString pendingDeviceOnId_;
+    QString pendingReadingId_;
     std::optional<bool> previousDeviceOn_;
     QString statusMessage_;
     bool signedIn_ = false;

@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRandomGenerator>
 #include <QVariant>
 #include <QVariantList>
 #include <QVariantMap>
@@ -331,6 +332,7 @@ void SessionController::onCompleted(const QString& op, quint64, int, const QByte
         roomRows_ = *rooms;
         emit roomsChanged();
         setStatus({});
+        walkStaleReadings();
         return;
     }
     if (op == QLatin1String("room-insert")) {
@@ -476,6 +478,30 @@ void SessionController::onCompleted(const QString& op, quint64, int, const QByte
         setStatus(tr("Couldn't update the device."));
         return;
     }
+    if (op == QLatin1String("device-reading")) {
+        const std::optional<QList<DeviceRow>> devices = parseDevices(body);
+        if (!devices.has_value() || devices->size() != 1
+            || devices->first().id != pendingReadingId_ || !devices->first().celsius.has_value()) {
+            pendingReadingId_.clear();
+            setStatus(tr("Couldn't update the thermometer."));
+            return;
+        }
+        const DeviceRow updated = devices->first();
+        for (RoomRow& room : roomRows_) {
+            for (DeviceRow& device : room.devices) {
+                if (device.id == updated.id) {
+                    device = updated;
+                    pendingReadingId_.clear();
+                    emit roomsChanged();
+                    setStatus({});
+                    return;
+                }
+            }
+        }
+        pendingReadingId_.clear();
+        setStatus(tr("Couldn't update the thermometer."));
+        return;
+    }
     if (op == QLatin1String("profile") || op == QLatin1String("profile-update")) {
         const std::optional<ProfileRow> profile = parseProfile(body);
         if (!profile.has_value() || profile->id != userId_) {
@@ -524,6 +550,9 @@ void SessionController::onFailed(const QString& op, quint64, int, const QString&
         setStatus(message);
     } else if (op == QLatin1String("device-on")) {
         clearPendingDeviceToggle(true);
+        setStatus(message);
+    } else if (op == QLatin1String("device-reading")) {
+        pendingReadingId_.clear();
         setStatus(message);
     } else if (op == QLatin1String("device-update") || op == QLatin1String("device-delete")) {
         setStatus(message);
@@ -612,6 +641,7 @@ void SessionController::clearLocal()
     roomRows_.clear();
     pendingDeviceOnId_.clear();
     previousDeviceOn_.reset();
+    pendingReadingId_.clear();
     api_.setAccessToken({});
     if (wasSignedIn) {
         emit signedInChanged();
@@ -649,6 +679,29 @@ int SessionController::nextDevicePosition(const QString& roomId) const
         break;
     }
     return position;
+}
+
+void SessionController::walkStaleReadings()
+{
+    if (!signedIn_ || !pendingReadingId_.isEmpty()) {
+        return;
+    }
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    for (const RoomRow& room : roomRows_) {
+        for (const DeviceRow& device : room.devices) {
+            if (device.kind != QLatin1String("thermometer") || !device.celsius.has_value()
+                || !readingIsStale(device.readingAt, now)) {
+                continue;
+            }
+            int tenths = QRandomGenerator::global()->bounded(-3, 4);
+            if (tenths == 0) {
+                tenths = 1;
+            }
+            pendingReadingId_ = device.id;
+            api_.setReading(device.id, nextCelsius(*device.celsius, tenths / 10.0), now);
+            return;
+        }
+    }
 }
 
 void SessionController::clearPendingDeviceToggle(bool restore)

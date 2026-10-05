@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QDateTime>
 #include <QHash>
 #include <QList>
 #include <QNetworkRequest>
@@ -36,6 +37,7 @@ public:
     void deleteRoom(const QString& id);
     void insertDevice(const QString& roomId, const QString& name, const QString& kind, int position);
     void setDeviceOn(const QString& id, bool on);
+    void setReading(const QString& id, double celsius, const QDateTime& readingAt);
     void updateDeviceName(const QString& id, const QString& name);
     void deleteDevice(const QString& id);
 
