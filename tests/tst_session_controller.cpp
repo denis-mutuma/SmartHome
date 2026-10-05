@@ -27,6 +27,7 @@ struct AuthServerState
     QByteArray profileUpdateRequest;
     QByteArray roomsRequest;
     QByteArray roomInsertRequest;
+    QByteArray deviceInsertRequest;
     QByteArray profileBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":null}])");
     QByteArray updatedProfileBody = QByteArrayLiteral(
@@ -34,6 +35,8 @@ struct AuthServerState
     QByteArray roomsBody = QByteArrayLiteral("[]");
     QByteArray insertedRoomBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174011","name":"Office","position":3}])");
+    QByteArray insertedDeviceBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Desk light","kind":"light","is_on":false,"celsius":null,"reading_at":null,"position":0}])");
     int refreshRequests = 0;
     int refreshStatus = 200;
 };
@@ -100,6 +103,11 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 status = 201;
                 reason = QByteArrayLiteral("Created");
                 payload = state.insertedRoomBody;
+            } else if (requestLine.startsWith(QByteArrayLiteral("POST /rest/v1/devices?select="))) {
+                state.deviceInsertRequest = *request;
+                status = 201;
+                reason = QByteArrayLiteral("Created");
+                payload = state.insertedDeviceBody;
             } else {
                 return;
             }
@@ -146,6 +154,7 @@ private slots:
     void refreshesNearExpirySessionOnce();
     void loadsAndSavesProfileSettings();
     void loadsAndCreatesRooms();
+    void createsDeviceInExistingRoom();
 };
 
 void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
@@ -365,6 +374,53 @@ void SessionControllerTest::loadsAndCreatesRooms()
     const QJsonObject body = requestBody(state.roomInsertRequest);
     QCOMPARE(body.value(QStringLiteral("name")).toString(), QStringLiteral("Office"));
     QCOMPARE(body.value(QStringLiteral("position")).toInt(), 3);
+}
+
+void SessionControllerTest::createsDeviceInExistingRoom()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.roomsBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[]}])");
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+
+    const QString roomId = QStringLiteral("123e4567-e89b-12d3-a456-426614174010");
+    QVERIFY(!controller.createDevice(roomId, QString(), QStringLiteral("light")));
+    QVERIFY(!controller.createDevice(roomId, QStringLiteral("Desk light"), QStringLiteral("camera")));
+    QVERIFY(!controller.createDevice(QStringLiteral("123e4567-e89b-12d3-a456-426614174099"),
+        QStringLiteral("Desk light"), QStringLiteral("light")));
+    QVERIFY(state.deviceInsertRequest.isEmpty());
+
+    QVERIFY(controller.createDevice(roomId, QStringLiteral(" Desk light "), QStringLiteral("light")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList().size(),
+        1, 5000);
+
+    const QVariantMap room = controller.rooms().first().toMap();
+    QCOMPARE(room.value(QStringLiteral("deviceCount")).toInt(), 1);
+    const QVariantMap device = room.value(QStringLiteral("devices")).toList().first().toMap();
+    QCOMPARE(device.value(QStringLiteral("deviceId")).toString(),
+        QStringLiteral("123e4567-e89b-12d3-a456-426614174020"));
+    QCOMPARE(device.value(QStringLiteral("name")).toString(), QStringLiteral("Desk light"));
+    QCOMPARE(device.value(QStringLiteral("kind")).toString(), QStringLiteral("light"));
+    QVERIFY(!device.value(QStringLiteral("isOn")).toBool());
+
+    const qsizetype headerEnd = state.deviceInsertRequest.indexOf(QByteArrayLiteral("\r\n\r\n"));
+    QVERIFY(state.deviceInsertRequest.left(headerEnd).toLower()
+        .contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
+    const QJsonObject body = requestBody(state.deviceInsertRequest);
+    QCOMPARE(body.value(QStringLiteral("room_id")).toString(), roomId);
+    QCOMPARE(body.value(QStringLiteral("name")).toString(), QStringLiteral("Desk light"));
+    QCOMPARE(body.value(QStringLiteral("kind")).toString(), QStringLiteral("light"));
+    QCOMPARE(body.value(QStringLiteral("position")).toInt(), 0);
+    QCOMPARE(body.value(QStringLiteral("is_on")).toBool(), false);
 }
 
 QTEST_MAIN(SessionControllerTest)

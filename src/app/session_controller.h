@@ -38,6 +38,7 @@ public:
     Q_INVOKABLE void signOut();
     Q_INVOKABLE bool saveSettings(const QString& firstName, const QString& city);
     Q_INVOKABLE bool createRoom(const QString& name);
+    Q_INVOKABLE bool createDevice(const QString& roomId, const QString& name, const QString& kind);
 
 signals:
     void signedInChanged();
@@ -57,6 +58,7 @@ private:
     void applySession(const SessionTokens& session, bool isRefresh);
     void clearLocal();
     int nextRoomPosition() const;
+    int nextDevicePosition(const QString& roomId) const;
     void setStatus(const QString& message);
 
     ApiClient api_;
