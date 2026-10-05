@@ -40,6 +40,8 @@ public:
     Q_INVOKABLE bool createRoom(const QString& name);
     Q_INVOKABLE bool createDevice(const QString& roomId, const QString& name, const QString& kind);
     Q_INVOKABLE bool setDeviceOn(const QString& deviceId, bool on);
+    Q_INVOKABLE bool renameDevice(const QString& deviceId, const QString& name);
+    Q_INVOKABLE bool deleteDevice(const QString& deviceId);
 
 signals:
     void signedInChanged();

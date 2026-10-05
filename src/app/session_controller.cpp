@@ -4,6 +4,9 @@
 #include "home_rules.h"
 #include "token_store.h"
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QVariant>
 #include <QVariantList>
 #include <QVariantMap>
@@ -187,6 +190,59 @@ bool SessionController::setDeviceOn(const QString& deviceId, bool on)
     return false;
 }
 
+bool SessionController::renameDevice(const QString& deviceId, const QString& name)
+{
+    if (!signedIn_) {
+        setStatus(tr("Sign in to manage your home."));
+        return false;
+    }
+    if (!isUuid(deviceId)) {
+        setStatus(tr("Choose an existing device."));
+        return false;
+    }
+    const QString normalizedName = name.trimmed();
+    if (!isNameOk(normalizedName)) {
+        setStatus(tr("Use 1 to 40 characters for the device name."));
+        return false;
+    }
+    const bool exists = std::any_of(roomRows_.cbegin(), roomRows_.cend(), [&deviceId](const RoomRow& room) {
+        return std::any_of(room.devices.cbegin(), room.devices.cend(), [&deviceId](const DeviceRow& device) {
+            return device.id == deviceId;
+        });
+    });
+    if (!exists) {
+        setStatus(tr("Choose an existing device."));
+        return false;
+    }
+    setStatus({});
+    api_.updateDeviceName(deviceId, normalizedName);
+    return true;
+}
+
+bool SessionController::deleteDevice(const QString& deviceId)
+{
+    if (!signedIn_) {
+        setStatus(tr("Sign in to manage your home."));
+        return false;
+    }
+    if (!isUuid(deviceId)) {
+        setStatus(tr("Choose an existing device."));
+        return false;
+    }
+    const bool exists = std::any_of(roomRows_.cbegin(), roomRows_.cend(), [&deviceId](const RoomRow& room) {
+        return std::any_of(room.devices.cbegin(), room.devices.cend(), [&deviceId](const DeviceRow& device) {
+            return device.id == deviceId;
+        });
+    });
+    if (!exists) {
+        setStatus(tr("Choose an existing device."));
+        return false;
+    }
+    setStatus({});
+    api_.deleteDevice(deviceId);
+    return true;
+}
+
 QVariantList SessionController::rooms() const
 {
     QVariantList result;
@@ -249,6 +305,52 @@ void SessionController::onCompleted(const QString& op, quint64, int, const QByte
         for (RoomRow& room : roomRows_) {
             if (room.id == inserted.roomId) {
                 room.devices.append(inserted);
+                emit roomsChanged();
+                setStatus({});
+                return;
+            }
+        }
+        setStatus(tr("The service could not complete the request."));
+        return;
+    }
+    if (op == QLatin1String("device-update")) {
+        const std::optional<QList<DeviceRow>> devices = parseDevices(body);
+        if (!devices.has_value() || devices->size() != 1) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        const DeviceRow& updated = devices->first();
+        for (RoomRow& room : roomRows_) {
+            for (DeviceRow& device : room.devices) {
+                if (device.id == updated.id) {
+                    device = updated;
+                    emit roomsChanged();
+                    setStatus({});
+                    return;
+                }
+            }
+        }
+        setStatus(tr("The service could not complete the request."));
+        return;
+    }
+    if (op == QLatin1String("device-delete")) {
+        const QJsonDocument response = QJsonDocument::fromJson(body);
+        if (!response.isArray() || response.array().isEmpty() || !response.array().first().isObject()) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        const QJsonValue idValue = response.array().first().toObject().value(QStringLiteral("id"));
+        if (!idValue.isString() || !isUuid(idValue.toString())) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        const QString deletedId = idValue.toString();
+        for (RoomRow& room : roomRows_) {
+            const auto device = std::find_if(room.devices.begin(), room.devices.end(), [&deletedId](const DeviceRow& row) {
+                return row.id == deletedId;
+            });
+            if (device != room.devices.end()) {
+                room.devices.erase(device);
                 emit roomsChanged();
                 setStatus({});
                 return;
@@ -328,6 +430,8 @@ void SessionController::onFailed(const QString& op, quint64, int, const QString&
         setStatus(message);
     } else if (op == QLatin1String("device-on")) {
         clearPendingDeviceToggle(true);
+        setStatus(message);
+    } else if (op == QLatin1String("device-update") || op == QLatin1String("device-delete")) {
         setStatus(message);
     }
 }
