@@ -4,9 +4,11 @@
 #include "home_json.h"
 
 #include <QDateTime>
+#include <QList>
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QVariantList>
 #include <QtQml/qqmlregistration.h>
 
 class SessionController : public QObject
@@ -17,6 +19,7 @@ class SessionController : public QObject
     Q_PROPERTY(QString email READ email NOTIFY emailChanged)
     Q_PROPERTY(QString firstName READ firstName NOTIFY profileChanged)
     Q_PROPERTY(QString city READ city NOTIFY profileChanged)
+    Q_PROPERTY(QVariantList rooms READ rooms NOTIFY roomsChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusChanged)
 
 public:
@@ -27,17 +30,20 @@ public:
     QString email() const { return email_; }
     QString firstName() const { return firstName_; }
     QString city() const { return city_; }
+    QVariantList rooms() const;
     QString statusMessage() const { return statusMessage_; }
 
     Q_INVOKABLE bool signIn(const QString& email, const QString& password);
     Q_INVOKABLE bool registerAccount(const QString& firstName, const QString& email, const QString& password);
     Q_INVOKABLE void signOut();
     Q_INVOKABLE bool saveSettings(const QString& firstName, const QString& city);
+    Q_INVOKABLE bool createRoom(const QString& name);
 
 signals:
     void signedInChanged();
     void emailChanged();
     void profileChanged();
+    void roomsChanged();
     void statusChanged();
 
 private slots:
@@ -50,6 +56,7 @@ private:
     void startRefresh();
     void applySession(const SessionTokens& session, bool isRefresh);
     void clearLocal();
+    int nextRoomPosition() const;
     void setStatus(const QString& message);
 
     ApiClient api_;
@@ -61,6 +68,7 @@ private:
     QString userId_;
     QString firstName_;
     QString city_;
+    QList<RoomRow> roomRows_;
     QString statusMessage_;
     bool signedIn_ = false;
     bool refreshInFlight_ = false;
