@@ -39,6 +39,7 @@ public:
     Q_INVOKABLE bool saveSettings(const QString& firstName, const QString& city);
     Q_INVOKABLE bool createRoom(const QString& name);
     Q_INVOKABLE bool createDevice(const QString& roomId, const QString& name, const QString& kind);
+    Q_INVOKABLE bool setDeviceOn(const QString& deviceId, bool on);
 
 signals:
     void signedInChanged();
@@ -59,6 +60,7 @@ private:
     void clearLocal();
     int nextRoomPosition() const;
     int nextDevicePosition(const QString& roomId) const;
+    void clearPendingDeviceToggle(bool restore);
     void setStatus(const QString& message);
 
     ApiClient api_;
@@ -71,6 +73,8 @@ private:
     QString firstName_;
     QString city_;
     QList<RoomRow> roomRows_;
+    QString pendingDeviceOnId_;
+    std::optional<bool> previousDeviceOn_;
     QString statusMessage_;
     bool signedIn_ = false;
     bool refreshInFlight_ = false;
