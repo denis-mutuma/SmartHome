@@ -14,6 +14,12 @@ set(QT_USE_TARGET_ANDROID_BUILD_DIR TRUE CACHE BOOL "Separate Android build dire
 if(EXISTS "${CMAKE_SOURCE_DIR}/config.local.cmake")
     include("${CMAKE_SOURCE_DIR}/config.local.cmake")
 endif()
+if(NOT DEFINED SMARTHOME_SUPABASE_URL)
+    set(SMARTHOME_SUPABASE_URL "")
+endif()
+if(NOT DEFINED SMARTHOME_SUPABASE_ANON_KEY)
+    set(SMARTHOME_SUPABASE_ANON_KEY "")
+endif()
 
 qt_add_library(smarthome_core STATIC
     src/core/home_rules.cpp
@@ -45,6 +51,16 @@ add_test(NAME token_store COMMAND tst_token_store)
 qt_add_executable(tst_api_client tests/tst_api_client.cpp)
 target_link_libraries(tst_api_client PRIVATE smarthome_core Qt6::Test)
 add_test(NAME api_client COMMAND tst_api_client)
+qt_add_executable(tst_session_controller
+    tests/tst_session_controller.cpp
+    src/app/session_controller.cpp
+    src/app/session_controller.h
+)
+target_link_libraries(tst_session_controller PRIVATE smarthome_core Qt6::Test)
+target_compile_definitions(tst_session_controller PRIVATE
+    "SMARTHOME_SUPABASE_URL=\"${SMARTHOME_SUPABASE_URL}\""
+    "SMARTHOME_SUPABASE_ANON_KEY=\"${SMARTHOME_SUPABASE_ANON_KEY}\"")
+add_test(NAME session_controller COMMAND tst_session_controller)
 if(ANDROID)
     set_property(TARGET tst_token_store PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
         "${CMAKE_SOURCE_DIR}/android")
@@ -66,6 +82,9 @@ if(WIN32)
     set_property(TEST api_client PROPERTY ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${_qt_prefix}/bin"
         "PATH=path_list_prepend:${_cxx_bin}")
+    set_property(TEST session_controller PROPERTY ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${_qt_prefix}/bin"
+        "PATH=path_list_prepend:${_cxx_bin}")
 endif()
 
 qt_add_executable(appSmartHome
@@ -75,6 +94,9 @@ qt_add_executable(appSmartHome
 qt_add_qml_module(appSmartHome
     URI SmartHome
     VERSION 1.0
+    SOURCES
+        src/app/session_controller.cpp
+        src/app/session_controller.h
     QML_FILES Main.qml
     QML_FILES ClickableImage.qml
     QML_FILES QuickActionButton.qml
@@ -120,8 +142,11 @@ if(ANDROID)
 endif()
 
 target_link_libraries(appSmartHome
-    PRIVATE Qt6::Quick
+    PRIVATE Qt6::Quick smarthome_core
 )
+target_compile_definitions(appSmartHome PRIVATE
+    "SMARTHOME_SUPABASE_URL=\"${SMARTHOME_SUPABASE_URL}\""
+    "SMARTHOME_SUPABASE_ANON_KEY=\"${SMARTHOME_SUPABASE_ANON_KEY}\"")
 
 include(GNUInstallDirs)
 install(TARGETS appSmartHome
