@@ -26,10 +26,16 @@ QByteArray objectJson(const QJsonObject& object)
 } // namespace
 
 ApiClient::ApiClient(QString baseUrl, QString anonKey, QObject* parent)
+    : ApiClient(std::move(baseUrl), std::move(anonKey), WeatherEndpoints{}, parent)
+{
+}
+
+ApiClient::ApiClient(QString baseUrl, QString anonKey, WeatherEndpoints weatherEndpoints, QObject* parent)
     : QObject(parent)
     , network_(new QNetworkAccessManager(this))
     , baseUrl_(std::move(baseUrl))
     , anonKey_(std::move(anonKey))
+    , weatherEndpoints_(std::move(weatherEndpoints))
 {
     while (baseUrl_.endsWith(QLatin1Char('/'))) {
         baseUrl_.chop(1);
@@ -348,7 +354,7 @@ void ApiClient::deleteDevice(const QString& id)
 
 void ApiClient::geocode(const QString& city)
 {
-    QUrl url(QStringLiteral("https://geocoding-api.open-meteo.com/v1/search"));
+    QUrl url = weatherEndpoints_.geocoding;
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("name"), city);
     query.addQueryItem(QStringLiteral("count"), QStringLiteral("1"));
@@ -360,7 +366,7 @@ void ApiClient::geocode(const QString& city)
 
 void ApiClient::forecast(double latitude, double longitude)
 {
-    QUrl url(QStringLiteral("https://api.open-meteo.com/v1/forecast"));
+    QUrl url = weatherEndpoints_.forecast;
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("latitude"), QString::number(latitude, 'f', 6));
     query.addQueryItem(QStringLiteral("longitude"), QString::number(longitude, 'f', 6));
