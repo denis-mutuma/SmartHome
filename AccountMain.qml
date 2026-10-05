@@ -16,6 +16,7 @@ Window {
     title: qsTr("SmartHome")
     color: "#18171C"
     property string selectedRoomId: ""
+    property bool settingsOpen: false
 
     function roomById(roomId) {
         for (var index = 0; index < session.rooms.length; ++index) {
@@ -50,7 +51,7 @@ Window {
         StackLayout {
             Layout.fillWidth: true
             Layout.preferredHeight: 520
-            currentIndex: !session.signedIn ? 0 : (root.selectedRoom ? 2 : 1)
+            currentIndex: !session.signedIn ? 0 : (root.settingsOpen ? 3 : (root.selectedRoom ? 2 : 1))
 
             Item {
                 ColumnLayout {
@@ -234,7 +235,10 @@ Window {
                             width: roomList.width
                             height: 58
                             Accessible.name: qsTr("Open room %1").arg(modelData.name)
-                            onClicked: root.selectedRoomId = modelData.id
+                            onClicked: {
+                                root.settingsOpen = false
+                                root.selectedRoomId = modelData.id
+                            }
 
                             background: Rectangle {
                                 color: "#2F2F37"
@@ -314,6 +318,17 @@ Window {
                             color: "#FFFFFF"
                             elide: Text.ElideRight
                             Accessible.name: qsTr("Signed-in email")
+                        }
+
+                        Button {
+                            text: qsTr("Settings")
+                            Accessible.name: qsTr("Settings")
+                            onClicked: root.settingsOpen = true
+
+                            background: Rectangle {
+                                color: "#2F2F37"
+                                radius: 4
+                            }
                         }
 
                         Button {
@@ -464,6 +479,115 @@ Window {
                                 color: "#2F2F37"
                                 radius: 4
                             }
+                        }
+                    }
+                }
+            }
+
+            Item {
+                onVisibleChanged: {
+                    if (visible) {
+                        settingsFirstName.text = session.firstName
+                        settingsCity.text = session.city
+                    }
+                }
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 14
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        Button {
+                            text: qsTr("Back")
+                            Accessible.name: qsTr("Back to home")
+                            onClicked: root.settingsOpen = false
+
+                            background: Rectangle {
+                                color: "#2F2F37"
+                                radius: 4
+                            }
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: qsTr("Settings")
+                            color: "#FFFFFF"
+                            font.pixelSize: 22
+                            font.bold: true
+                        }
+                    }
+
+                    TextField {
+                        id: settingsFirstName
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 50
+                        placeholderText: qsTr("First name")
+                        Accessible.name: qsTr("First name")
+                        color: "#FFFFFF"
+
+                        background: Rectangle {
+                            color: "#2F2F37"
+                            radius: 4
+                        }
+                    }
+
+                    TextField {
+                        id: settingsCity
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 50
+                        placeholderText: qsTr("City")
+                        Accessible.name: qsTr("Saved city")
+                        color: "#FFFFFF"
+
+                        background: Rectangle {
+                            color: "#2F2F37"
+                            radius: 4
+                        }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        visible: session.statusMessage.length > 0
+                        text: session.statusMessage
+                        color: "#FFFFFF"
+                        wrapMode: Text.Wrap
+                        Accessible.name: qsTr("Settings status")
+                    }
+
+                    Button {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 50
+                        text: qsTr("Save settings")
+                        Accessible.name: qsTr("Save settings")
+                        onClicked: session.saveSettings(settingsFirstName.text, settingsCity.text)
+
+                        background: Rectangle {
+                            color: "#536DED"
+                            radius: 4
+                        }
+                    }
+
+                    Item {
+                        Layout.fillHeight: true
+                    }
+
+                    Button {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 46
+                        text: qsTr("Sign out")
+                        Accessible.name: qsTr("Sign out")
+                        onClicked: {
+                            root.settingsOpen = false
+                            root.selectedRoomId = ""
+                            session.signOut()
+                        }
+
+                        background: Rectangle {
+                            color: "#2F2F37"
+                            radius: 4
                         }
                     }
                 }
