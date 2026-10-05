@@ -38,6 +38,8 @@ public:
     Q_INVOKABLE void signOut();
     Q_INVOKABLE bool saveSettings(const QString& firstName, const QString& city);
     Q_INVOKABLE bool createRoom(const QString& name);
+    Q_INVOKABLE bool renameRoom(const QString& roomId, const QString& name);
+    Q_INVOKABLE bool deleteRoom(const QString& roomId);
     Q_INVOKABLE bool createDevice(const QString& roomId, const QString& name, const QString& kind);
     Q_INVOKABLE bool setDeviceOn(const QString& deviceId, bool on);
     Q_INVOKABLE bool renameDevice(const QString& deviceId, const QString& name);

@@ -123,6 +123,55 @@ bool SessionController::createRoom(const QString& name)
     return true;
 }
 
+bool SessionController::renameRoom(const QString& roomId, const QString& name)
+{
+    if (!signedIn_) {
+        setStatus(tr("Sign in to manage your home."));
+        return false;
+    }
+    if (!isUuid(roomId)) {
+        setStatus(tr("Choose an existing room."));
+        return false;
+    }
+    const auto room = std::find_if(roomRows_.cbegin(), roomRows_.cend(), [&roomId](const RoomRow& row) {
+        return row.id == roomId;
+    });
+    if (room == roomRows_.cend()) {
+        setStatus(tr("Choose an existing room."));
+        return false;
+    }
+    const QString normalizedName = name.trimmed();
+    if (!isNameOk(normalizedName)) {
+        setStatus(tr("Use 1 to 40 characters for the room name."));
+        return false;
+    }
+    setStatus({});
+    api_.updateRoom(roomId, normalizedName);
+    return true;
+}
+
+bool SessionController::deleteRoom(const QString& roomId)
+{
+    if (!signedIn_) {
+        setStatus(tr("Sign in to manage your home."));
+        return false;
+    }
+    if (!isUuid(roomId)) {
+        setStatus(tr("Choose an existing room."));
+        return false;
+    }
+    const bool exists = std::any_of(roomRows_.cbegin(), roomRows_.cend(), [&roomId](const RoomRow& room) {
+        return room.id == roomId;
+    });
+    if (!exists) {
+        setStatus(tr("Choose an existing room."));
+        return false;
+    }
+    setStatus({});
+    api_.deleteRoom(roomId);
+    return true;
+}
+
 bool SessionController::createDevice(const QString& roomId, const QString& name, const QString& kind)
 {
     if (!signedIn_) {
@@ -295,6 +344,50 @@ void SessionController::onCompleted(const QString& op, quint64, int, const QByte
         setStatus({});
         return;
     }
+    if (op == QLatin1String("room-update")) {
+        const std::optional<QList<RoomRow>> rooms = parseRooms(body);
+        if (!rooms.has_value() || rooms->size() != 1) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        const RoomRow& updated = rooms->first();
+        for (RoomRow& room : roomRows_) {
+            if (room.id == updated.id) {
+                const QList<DeviceRow> devices = room.devices;
+                room = updated;
+                room.devices = devices;
+                emit roomsChanged();
+                setStatus({});
+                return;
+            }
+        }
+        setStatus(tr("The service could not complete the request."));
+        return;
+    }
+    if (op == QLatin1String("room-delete")) {
+        const QJsonDocument response = QJsonDocument::fromJson(body);
+        if (!response.isArray() || response.array().isEmpty() || !response.array().first().isObject()) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        const QJsonValue idValue = response.array().first().toObject().value(QStringLiteral("id"));
+        if (!idValue.isString() || !isUuid(idValue.toString())) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        const QString deletedId = idValue.toString();
+        const auto room = std::find_if(roomRows_.begin(), roomRows_.end(), [&deletedId](const RoomRow& row) {
+            return row.id == deletedId;
+        });
+        if (room == roomRows_.end()) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        roomRows_.erase(room);
+        emit roomsChanged();
+        setStatus({});
+        return;
+    }
     if (op == QLatin1String("device-insert")) {
         const std::optional<QList<DeviceRow>> devices = parseDevices(body);
         if (!devices.has_value() || devices->size() != 1) {
@@ -426,6 +519,7 @@ void SessionController::onFailed(const QString& op, quint64, int, const QString&
     } else if (op == QLatin1String("login") || op == QLatin1String("signup")
         || op == QLatin1String("profile") || op == QLatin1String("profile-update")
         || op == QLatin1String("rooms") || op == QLatin1String("room-insert")
+        || op == QLatin1String("room-update") || op == QLatin1String("room-delete")
         || op == QLatin1String("device-insert")) {
         setStatus(message);
     } else if (op == QLatin1String("device-on")) {
