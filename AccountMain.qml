@@ -17,6 +17,9 @@ Window {
     color: "#18171C"
     property string selectedRoomId: ""
     property bool settingsOpen: false
+    property string actionEntityType: ""
+    property string actionEntityId: ""
+    property string actionEntityName: ""
 
     function roomById(roomId) {
         for (var index = 0; index < session.rooms.length; ++index) {
@@ -28,6 +31,13 @@ Window {
     }
 
     readonly property var selectedRoom: roomById(selectedRoomId)
+
+    function openEntityActions(entityType, entityId, entityName) {
+        actionEntityType = entityType
+        actionEntityId = entityId
+        actionEntityName = entityName
+        entityMenu.popup()
+    }
 
     SessionController {
         id: session
@@ -76,7 +86,6 @@ Window {
                             text: qsTr("Sign in")
                             Accessible.name: qsTr("Sign in")
                         }
-
                         TabButton {
                             text: qsTr("Register")
                             Accessible.name: qsTr("Register")
@@ -229,36 +238,48 @@ Window {
                         spacing: 8
                         model: session.rooms
 
-                        delegate: Button {
+                        delegate: Rectangle {
                             id: roomDelegate
                             required property var modelData
                             width: roomList.width
                             height: 58
-                            Accessible.name: qsTr("Open room %1").arg(modelData.name)
-                            onClicked: {
-                                root.settingsOpen = false
-                                root.selectedRoomId = modelData.id
-                            }
+                            color: "#2F2F37"
+                            radius: 4
 
-                            background: Rectangle {
-                                color: "#2F2F37"
-                                radius: 4
-                            }
-
-                            contentItem: RowLayout {
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 10
+                                anchors.rightMargin: 4
                                 spacing: 10
 
-                                Label {
+                                Button {
                                     Layout.fillWidth: true
                                     text: roomDelegate.modelData.name
-                                    color: "#FFFFFF"
-                                    Accessible.name: qsTr("Room name")
+                                    flat: true
+                                    Accessible.name: qsTr("Open room %1").arg(roomDelegate.modelData.name)
+                                    onClicked: {
+                                        root.settingsOpen = false
+                                        root.selectedRoomId = roomDelegate.modelData.id
+                                    }
+
+                                    contentItem: Label {
+                                        text: roomDelegate.modelData.name
+                                        color: "#FFFFFF"
+                                        elide: Text.ElideRight
+                                    }
                                 }
 
                                 Label {
                                     text: qsTr("%1 devices").arg(roomDelegate.modelData.deviceCount)
                                     color: "#FFFFFF"
                                     Accessible.name: qsTr("Device count")
+                                }
+
+                                ToolButton {
+                                    text: "..."
+                                    Accessible.name: qsTr("Room actions for %1").arg(roomDelegate.modelData.name)
+                                    onClicked: root.openEntityActions("room", roomDelegate.modelData.id,
+                                        roomDelegate.modelData.name)
                                 }
                             }
                         }
@@ -450,6 +471,13 @@ Window {
                                         when: !deviceSwitch.down
                                     }
                                 }
+
+                                ToolButton {
+                                    text: "..."
+                                    Accessible.name: qsTr("Device actions for %1").arg(deviceDelegate.modelData.name)
+                                    onClicked: root.openEntityActions("device", deviceDelegate.modelData.deviceId,
+                                        deviceDelegate.modelData.name)
+                                }
                             }
                         }
                     }
@@ -596,6 +624,77 @@ Window {
 
         Item {
             Layout.fillHeight: true
+        }
+    }
+
+    Menu {
+        id: entityMenu
+
+        MenuItem {
+            text: qsTr("Rename")
+            onTriggered: {
+                renameInput.text = root.actionEntityName
+                renameDialog.open()
+            }
+        }
+
+        MenuItem {
+            text: qsTr("Delete")
+            onTriggered: deleteDialog.open()
+        }
+    }
+
+    Dialog {
+        id: renameDialog
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 32, 360)
+        modal: true
+        title: root.actionEntityType === "room" ? qsTr("Rename room") : qsTr("Rename device")
+        standardButtons: Dialog.Save | Dialog.Cancel
+
+        contentItem: TextField {
+            id: renameInput
+            placeholderText: root.actionEntityType === "room" ? qsTr("Room name") : qsTr("Device name")
+            Accessible.name: placeholderText
+            color: "#FFFFFF"
+
+            background: Rectangle {
+                color: "#2F2F37"
+                radius: 4
+            }
+        }
+
+        onAccepted: {
+            if (root.actionEntityType === "room") {
+                session.renameRoom(root.actionEntityId, renameInput.text)
+            } else {
+                session.renameDevice(root.actionEntityId, renameInput.text)
+            }
+        }
+    }
+
+    Dialog {
+        id: deleteDialog
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 32, 360)
+        modal: true
+        title: qsTr("Delete %1?").arg(root.actionEntityType === "room" ? qsTr("room") : qsTr("device"))
+        standardButtons: Dialog.Yes | Dialog.Cancel
+
+        contentItem: Label {
+            text: root.actionEntityType === "room"
+                ? qsTr("Delete %1 and its devices?").arg(root.actionEntityName)
+                : qsTr("Delete %1?").arg(root.actionEntityName)
+            color: "#FFFFFF"
+            wrapMode: Text.Wrap
+        }
+
+        onAccepted: {
+            if (root.actionEntityType === "room") {
+                session.deleteRoom(root.actionEntityId)
+            } else {
+                session.deleteDevice(root.actionEntityId)
+            }
         }
     }
 }
