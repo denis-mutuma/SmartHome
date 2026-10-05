@@ -25,10 +25,15 @@ struct AuthServerState
     QByteArray logoutRequest;
     QByteArray profileRequest;
     QByteArray profileUpdateRequest;
+    QByteArray roomsRequest;
+    QByteArray roomInsertRequest;
     QByteArray profileBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":null}])");
     QByteArray updatedProfileBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina K","city":"Nairobi"}])");
+    QByteArray roomsBody = QByteArrayLiteral("[]");
+    QByteArray insertedRoomBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174011","name":"Office","position":3}])");
     int refreshRequests = 0;
     int refreshStatus = 200;
 };
@@ -87,6 +92,14 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
             } else if (requestLine.startsWith(QByteArrayLiteral("PATCH /rest/v1/profiles?id=eq."))) {
                 state.profileUpdateRequest = *request;
                 payload = state.updatedProfileBody;
+            } else if (requestLine.startsWith(QByteArrayLiteral("GET /rest/v1/rooms?select="))) {
+                state.roomsRequest = *request;
+                payload = state.roomsBody;
+            } else if (requestLine.startsWith(QByteArrayLiteral("POST /rest/v1/rooms?select="))) {
+                state.roomInsertRequest = *request;
+                status = 201;
+                reason = QByteArrayLiteral("Created");
+                payload = state.insertedRoomBody;
             } else {
                 return;
             }
@@ -132,6 +145,7 @@ private slots:
     void clearsRejectedStoredSession();
     void refreshesNearExpirySessionOnce();
     void loadsAndSavesProfileSettings();
+    void loadsAndCreatesRooms();
 };
 
 void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
@@ -226,7 +240,7 @@ void SessionControllerTest::restoresSessionWithRotatedRefreshToken()
     QTRY_VERIFY_WITH_TIMEOUT(controller.signedIn(), 5000);
 
     QCOMPARE(controller.email(), QStringLiteral("person@example.com"));
-    QCOMPARE(loadRefreshToken(tokenPath), QStringLiteral("rotated-refresh-token"));
+    QTRY_COMPARE_WITH_TIMEOUT(loadRefreshToken(tokenPath), QStringLiteral("rotated-refresh-token"), 5000);
     QCOMPARE(state.refreshRequests, 1);
     QCOMPARE(requestBody(state.refreshRequest).value(QStringLiteral("refresh_token")).toString(),
         QStringLiteral("old-refresh-token"));
@@ -274,7 +288,7 @@ void SessionControllerTest::refreshesNearExpirySessionOnce()
     QVERIFY(QMetaObject::invokeMethod(&controller, "refreshIfNeeded", Qt::DirectConnection));
     QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 1, 5000);
 
-    QCOMPARE(loadRefreshToken(tokenPath), QStringLiteral("rotated-refresh-token"));
+    QTRY_COMPARE_WITH_TIMEOUT(loadRefreshToken(tokenPath), QStringLiteral("rotated-refresh-token"), 5000);
     QCOMPARE(requestBody(state.refreshRequest).value(QStringLiteral("refresh_token")).toString(),
         QStringLiteral("old-refresh-token"));
 }
@@ -312,6 +326,45 @@ void SessionControllerTest::loadsAndSavesProfileSettings()
     const QJsonObject body = requestBody(state.profileUpdateRequest);
     QCOMPARE(body.value(QStringLiteral("first_name")).toString(), QStringLiteral("Amina K"));
     QCOMPARE(body.value(QStringLiteral("city")).toString(), QStringLiteral("Nairobi"));
+}
+
+void SessionControllerTest::loadsAndCreatesRooms()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.roomsBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":2,"devices":[]}])");
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+
+    const QVariantMap existingRoom = controller.rooms().first().toMap();
+    QCOMPARE(existingRoom.value(QStringLiteral("id")).toString(),
+        QStringLiteral("123e4567-e89b-12d3-a456-426614174010"));
+    QCOMPARE(existingRoom.value(QStringLiteral("name")).toString(), QStringLiteral("Living room"));
+    QCOMPARE(existingRoom.value(QStringLiteral("position")).toInt(), 2);
+    QVERIFY(state.roomsRequest.left(state.roomsRequest.indexOf(QByteArrayLiteral("\r\n\r\n")))
+        .toLower().contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
+
+    QVERIFY(!controller.createRoom(QString()));
+    QVERIFY(state.roomInsertRequest.isEmpty());
+    QVERIFY(controller.createRoom(QStringLiteral(" Office ")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 2, 5000);
+
+    const QVariantMap createdRoom = controller.rooms().last().toMap();
+    QCOMPARE(createdRoom.value(QStringLiteral("name")).toString(), QStringLiteral("Office"));
+    QCOMPARE(createdRoom.value(QStringLiteral("position")).toInt(), 3);
+    QVERIFY(state.roomInsertRequest.left(state.roomInsertRequest.indexOf(QByteArrayLiteral("\r\n\r\n")))
+        .toLower().contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
+    const QJsonObject body = requestBody(state.roomInsertRequest);
+    QCOMPARE(body.value(QStringLiteral("name")).toString(), QStringLiteral("Office"));
+    QCOMPARE(body.value(QStringLiteral("position")).toInt(), 3);
 }
 
 QTEST_MAIN(SessionControllerTest)

@@ -4,6 +4,8 @@
 #include "home_rules.h"
 #include "token_store.h"
 
+#include <QVariantMap>
+
 #include <utility>
 
 SessionController::SessionController(QObject* parent)
@@ -99,8 +101,59 @@ bool SessionController::saveSettings(const QString& firstName, const QString& ci
     return true;
 }
 
+bool SessionController::createRoom(const QString& name)
+{
+    if (!signedIn_) {
+        setStatus(tr("Sign in to manage your home."));
+        return false;
+    }
+    const QString normalizedName = name.trimmed();
+    if (!isNameOk(normalizedName)) {
+        setStatus(tr("Use 1 to 40 characters for the room name."));
+        return false;
+    }
+    setStatus({});
+    api_.insertRoom(normalizedName, nextRoomPosition());
+    return true;
+}
+
+QVariantList SessionController::rooms() const
+{
+    QVariantList result;
+    for (const RoomRow& room : roomRows_) {
+        QVariantMap roomMap;
+        roomMap.insert(QStringLiteral("id"), room.id);
+        roomMap.insert(QStringLiteral("name"), room.name);
+        roomMap.insert(QStringLiteral("position"), room.position);
+        result.append(roomMap);
+    }
+    return result;
+}
+
 void SessionController::onCompleted(const QString& op, quint64, int, const QByteArray& body)
 {
+    if (op == QLatin1String("rooms")) {
+        const std::optional<QList<RoomRow>> rooms = parseRooms(body);
+        if (!rooms.has_value()) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        roomRows_ = *rooms;
+        emit roomsChanged();
+        setStatus({});
+        return;
+    }
+    if (op == QLatin1String("room-insert")) {
+        const std::optional<QList<RoomRow>> rooms = parseRooms(body);
+        if (!rooms.has_value() || rooms->size() != 1) {
+            setStatus(tr("The service could not complete the request."));
+            return;
+        }
+        roomRows_.append(rooms->first());
+        emit roomsChanged();
+        setStatus({});
+        return;
+    }
     if (op == QLatin1String("profile") || op == QLatin1String("profile-update")) {
         const std::optional<ProfileRow> profile = parseProfile(body);
         if (!profile.has_value() || profile->id != userId_) {
@@ -142,7 +195,8 @@ void SessionController::onFailed(const QString& op, quint64, int, const QString&
         clearLocal();
         setStatus(message);
     } else if (op == QLatin1String("login") || op == QLatin1String("signup")
-        || op == QLatin1String("profile") || op == QLatin1String("profile-update")) {
+        || op == QLatin1String("profile") || op == QLatin1String("profile-update")
+        || op == QLatin1String("rooms") || op == QLatin1String("room-insert")) {
         setStatus(message);
     }
 }
@@ -208,6 +262,7 @@ void SessionController::applySession(const SessionTokens& session, bool isRefres
         }
     }
     api_.fetchProfile();
+    api_.fetchRooms();
 }
 
 void SessionController::clearLocal()
@@ -215,6 +270,7 @@ void SessionController::clearLocal()
     const bool wasSignedIn = signedIn_;
     const bool hadEmail = !email_.isEmpty();
     const bool hadProfile = !userId_.isEmpty() || !firstName_.isEmpty() || !city_.isEmpty();
+    const bool hadRooms = !roomRows_.isEmpty();
     signedIn_ = false;
     accessToken_.clear();
     refreshToken_.clear();
@@ -224,6 +280,7 @@ void SessionController::clearLocal()
     userId_.clear();
     firstName_.clear();
     city_.clear();
+    roomRows_.clear();
     api_.setAccessToken({});
     if (wasSignedIn) {
         emit signedInChanged();
@@ -234,6 +291,18 @@ void SessionController::clearLocal()
     if (hadProfile) {
         emit profileChanged();
     }
+    if (hadRooms) {
+        emit roomsChanged();
+    }
+}
+
+int SessionController::nextRoomPosition() const
+{
+    int position = 0;
+    for (const RoomRow& room : roomRows_) {
+        position = qMax(position, room.position + 1);
+    }
+    return position;
 }
 
 void SessionController::setStatus(const QString& message)
