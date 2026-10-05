@@ -32,6 +32,7 @@ struct AuthServerState
     QByteArray roomDeleteRequest;
     QByteArray deviceInsertRequest;
     QByteArray deviceToggleRequest;
+    QByteArray deviceReadingRequest;
     QByteArray deviceUpdateRequest;
     QByteArray deviceDeleteRequest;
     QByteArray profileBody = QByteArrayLiteral(
@@ -127,7 +128,18 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 const QJsonObject patch = QJsonDocument::fromJson(
                     request->mid(headerEnd + 4)).object();
                 QJsonObject row = QJsonDocument::fromJson(state.insertedDeviceBody).array().first().toObject();
-                if (patch.contains(QStringLiteral("name"))) {
+                if (patch.contains(QStringLiteral("celsius"))) {
+                    state.deviceReadingRequest = *request;
+                    row.insert(QStringLiteral("id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174030"));
+                    row.insert(QStringLiteral("room_id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174010"));
+                    row.insert(QStringLiteral("name"), QStringLiteral("Old thermometer"));
+                    row.insert(QStringLiteral("position"), 0);
+                    row.insert(QStringLiteral("kind"), QStringLiteral("thermometer"));
+                    row.insert(QStringLiteral("is_on"), QJsonValue(QJsonValue::Null));
+                    row.insert(QStringLiteral("celsius"), patch.value(QStringLiteral("celsius")));
+                    row.insert(QStringLiteral("reading_at"), patch.value(QStringLiteral("reading_at")));
+                    payload = QJsonDocument(QJsonArray{row}).toJson(QJsonDocument::Compact);
+                } else if (patch.contains(QStringLiteral("name"))) {
                     state.deviceUpdateRequest = *request;
                     row.insert(QStringLiteral("name"), patch.value(QStringLiteral("name")));
                     payload = QJsonDocument(QJsonArray{row}).toJson(QJsonDocument::Compact);
@@ -194,6 +206,7 @@ private slots:
     void togglesDeviceAndRollsBackOnFailure();
     void renamesAndDeletesDevice();
     void renamesAndDeletesRoom();
+    void updatesOnlyStaleThermometer();
 };
 
 void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
@@ -572,6 +585,56 @@ void SessionControllerTest::renamesAndDeletesRoom()
     QVERIFY(state.roomDeleteRequest.startsWith(QByteArrayLiteral("DELETE /rest/v1/rooms?id=eq.")));
     QVERIFY(state.roomDeleteRequest.toLower().contains(
         QByteArrayLiteral("authorization: bearer access-token")));
+}
+
+void SessionControllerTest::updatesOnlyStaleThermometer()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    const QString freshReadingAt = QDateTime::currentDateTimeUtc().addSecs(-30).toString(Qt::ISODateWithMs);
+    const QJsonArray devices{
+        QJsonObject{{QStringLiteral("id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174030")},
+            {QStringLiteral("room_id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174010")},
+            {QStringLiteral("name"), QStringLiteral("Old thermometer")},
+            {QStringLiteral("kind"), QStringLiteral("thermometer")},
+            {QStringLiteral("is_on"), QJsonValue(QJsonValue::Null)},
+            {QStringLiteral("celsius"), 23.4},
+            {QStringLiteral("reading_at"), QStringLiteral("2000-01-01T00:00:00+00:00")},
+            {QStringLiteral("position"), 0}},
+        QJsonObject{{QStringLiteral("id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174031")},
+            {QStringLiteral("room_id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174010")},
+            {QStringLiteral("name"), QStringLiteral("Fresh thermometer")},
+            {QStringLiteral("kind"), QStringLiteral("thermometer")},
+            {QStringLiteral("is_on"), QJsonValue(QJsonValue::Null)},
+            {QStringLiteral("celsius"), 22.4},
+            {QStringLiteral("reading_at"), freshReadingAt},
+            {QStringLiteral("position"), 1}}};
+    state.roomsBody = QJsonDocument(QJsonArray{QJsonObject{
+        {QStringLiteral("id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174010")},
+        {QStringLiteral("name"), QStringLiteral("Living room")},
+        {QStringLiteral("position"), 0},
+        {QStringLiteral("devices"), devices}}}).toJson(QJsonDocument::Compact);
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_VERIFY_WITH_TIMEOUT(!state.deviceReadingRequest.isEmpty(), 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices"))
+        .toList().first().toMap().value(QStringLiteral("celsius")).toDouble() != 23.4, 5000);
+
+    QCOMPARE(state.deviceReadingRequest.startsWith(QByteArrayLiteral("PATCH /rest/v1/devices?id=eq.123e4567-e89b-12d3-a456-426614174030")), true);
+    QVERIFY(state.deviceReadingRequest.left(state.deviceReadingRequest.indexOf(QByteArrayLiteral("\r\n\r\n")))
+        .toLower().contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
+    const QJsonObject reading = requestBody(state.deviceReadingRequest);
+    QVERIFY(reading.value(QStringLiteral("celsius")).toDouble() >= 18.0);
+    QVERIFY(reading.value(QStringLiteral("celsius")).toDouble() <= 28.0);
+    QVERIFY(QDateTime::fromString(reading.value(QStringLiteral("reading_at")).toString(), Qt::ISODateWithMs).isValid());
+    QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
+        .at(1).toMap().value(QStringLiteral("celsius")).toDouble(), 22.4);
 }
 
 QTEST_MAIN(SessionControllerTest)

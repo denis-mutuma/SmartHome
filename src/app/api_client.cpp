@@ -11,6 +11,7 @@
 #include <QNetworkRequest>
 #include <QUrlQuery>
 
+#include <cmath>
 #include <utility>
 
 namespace {
@@ -300,6 +301,24 @@ void ApiClient::setDeviceOn(const QString& id, bool on)
     }
     const QJsonObject body{{QStringLiteral("is_on"), on}};
     send(QStringLiteral("device-on"), "PATCH",
+        QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id
+            + QStringLiteral("&select=id,room_id,name,kind,is_on,celsius,reading_at,position")),
+        objectJson(body), true, true, true);
+}
+
+void ApiClient::setReading(const QString& id, double celsius, const QDateTime& readingAt)
+{
+    if (!guardConfig(QStringLiteral("device-reading")) || !guardUuid(QStringLiteral("device-reading"), id)) {
+        return;
+    }
+    if (!std::isfinite(celsius) || celsius < 18.0 || celsius > 28.0 || !readingAt.isValid()) {
+        emit failed(QStringLiteral("device-reading"), 0, 0,
+            QStringLiteral("The service could not complete the request."));
+        return;
+    }
+    const QJsonObject body{{QStringLiteral("celsius"), celsius},
+        {QStringLiteral("reading_at"), readingAt.toUTC().toString(Qt::ISODateWithMs)}};
+    send(QStringLiteral("device-reading"), "PATCH",
         QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id
             + QStringLiteral("&select=id,room_id,name,kind,is_on,celsius,reading_at,position")),
         objectJson(body), true, true, true);
