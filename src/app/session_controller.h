@@ -28,10 +28,14 @@ class SessionController : public QObject
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusChanged)
 
 public:
+    static constexpr int ActiveRefreshIntervalMs = 20000;
+
     explicit SessionController(QObject* parent = nullptr);
     SessionController(QString baseUrl, QString anonKey, QString tokenFilePath, QObject* parent = nullptr);
     SessionController(QString baseUrl, QString anonKey, QString tokenFilePath,
         ApiClient::WeatherEndpoints weatherEndpoints, QObject* parent = nullptr);
+    SessionController(QString baseUrl, QString anonKey, QString tokenFilePath,
+        ApiClient::WeatherEndpoints weatherEndpoints, int activeRefreshIntervalMs, QObject* parent = nullptr);
 
     bool signedIn() const { return signedIn_; }
     QString email() const { return email_; }
@@ -66,6 +70,7 @@ signals:
 
 private slots:
     void refreshIfNeeded();
+    void updatePolling(Qt::ApplicationState applicationState);
 
 private:
     void onCompleted(const QString& op, quint64 requestId, int status, const QByteArray& body);
@@ -76,7 +81,6 @@ private:
     void startRefresh();
     void applySession(const SessionTokens& session, bool isRefresh);
     void clearLocal();
-    void updatePolling();
     void walkStaleReadings();
     void updateWeather();
     int nextRoomPosition() const;

@@ -31,6 +31,13 @@ SessionController::SessionController(QString baseUrl, QString anonKey, QString t
 
 SessionController::SessionController(QString baseUrl, QString anonKey, QString tokenFilePath,
     ApiClient::WeatherEndpoints weatherEndpoints, QObject* parent)
+    : SessionController(std::move(baseUrl), std::move(anonKey), std::move(tokenFilePath),
+          std::move(weatherEndpoints), ActiveRefreshIntervalMs, parent)
+{
+}
+
+SessionController::SessionController(QString baseUrl, QString anonKey, QString tokenFilePath,
+    ApiClient::WeatherEndpoints weatherEndpoints, int activeRefreshIntervalMs, QObject* parent)
     : QObject(parent)
     , api_(std::move(baseUrl), std::move(anonKey), std::move(weatherEndpoints))
     , tokenFilePath_(std::move(tokenFilePath))
@@ -71,10 +78,10 @@ SessionController::SessionController(QString baseUrl, QString anonKey, QString t
     connect(&activeRefreshTimer_, &QTimer::timeout, this, &SessionController::reload);
     refreshTimer_.setInterval(15000);
     refreshTimer_.start();
-    activeRefreshTimer_.setInterval(20000);
+    activeRefreshTimer_.setInterval(activeRefreshIntervalMs);
     if (auto* guiApp = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
-        connect(guiApp, &QGuiApplication::applicationStateChanged, this,
-            [this](Qt::ApplicationState) { updatePolling(); });
+        connect(guiApp, &QGuiApplication::applicationStateChanged, this, &SessionController::updatePolling);
+        updatePolling(guiApp->applicationState());
     }
     refreshToken_ = loadRefreshToken(tokenFilePath_);
     if (!refreshToken_.isEmpty()) {
@@ -748,7 +755,9 @@ void SessionController::applySession(const SessionTokens& session, bool isRefres
     email_ = session.email;
     api_.setAccessToken(accessToken_);
     signedIn_ = true;
-    updatePolling();
+    if (auto* guiApp = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
+        updatePolling(guiApp->applicationState());
+    }
     if (!wasSignedIn) {
         emit signedInChanged();
     }
@@ -878,10 +887,9 @@ void SessionController::updateWeather()
     api_.geocode(city_);
 }
 
-void SessionController::updatePolling()
+void SessionController::updatePolling(Qt::ApplicationState applicationState)
 {
-    auto* guiApp = qobject_cast<QGuiApplication*>(QCoreApplication::instance());
-    if (signedIn_ && guiApp && guiApp->applicationState() == Qt::ApplicationActive) {
+    if (signedIn_ && applicationState == Qt::ApplicationActive) {
         if (!activeRefreshTimer_.isActive()) {
             activeRefreshTimer_.start();
         }
