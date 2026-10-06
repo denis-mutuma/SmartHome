@@ -138,6 +138,8 @@ set_target_properties(appSmartHome PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 if(ANDROID)
+    set_property(TARGET appSmartHome PROPERTY QT_ANDROID_PACKAGE_NAME
+        "org.mutuma.smarthome")
     set_property(TARGET appSmartHome PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
         "${CMAKE_SOURCE_DIR}/android")
 endif()
