@@ -78,6 +78,7 @@ struct AuthServerState
     bool failDeviceToggle = false;
     int refreshRequests = 0;
     int refreshStatus = 200;
+    int profileUnauthorizedResponses = 0;
 };
 
 void writeResponse(const DeferredResponse& response)
@@ -141,7 +142,14 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
             } else if (path == QByteArrayLiteral("/rest/v1/profiles?select=id,first_name,city")) {
                 ++state.profileRequests;
                 state.profileRequest = *request;
-                payload = state.profileBody;
+                if (state.profileUnauthorizedResponses > 0) {
+                    --state.profileUnauthorizedResponses;
+                    status = 401;
+                    reason = QByteArrayLiteral("Unauthorized");
+                    payload = QByteArrayLiteral(R"({"message":"access token expired"})");
+                } else {
+                    payload = state.profileBody;
+                }
                 if (state.deferProfileResponses) {
                     deferredResponses = &state.pendingProfileResponses;
                 }
@@ -319,6 +327,9 @@ private slots:
     void rejectsInvalidCredentials();
     void restoresSessionWithRotatedRefreshToken();
     void clearsRejectedStoredSession();
+    void transientRefreshFailurePreservesSession();
+    void rejectedRefreshDiscardsQueuedRequests();
+    void retriesUnauthorizedRequestOnceAfterRefresh();
     void refreshesNearExpirySessionOnce();
     void loadsAndSavesProfileSettings();
     void loadsAndCreatesRooms();
@@ -451,6 +462,106 @@ void SessionControllerTest::clearsRejectedStoredSession()
     QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 1, 5000);
     QTRY_VERIFY_WITH_TIMEOUT(loadRefreshToken(tokenPath).isEmpty(), 5000);
     QVERIFY(!controller.signedIn());
+}
+
+void SessionControllerTest::transientRefreshFailurePreservesSession()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString tokenPath = directory.filePath(QStringLiteral("refresh-token.bin"));
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse(QStringLiteral("long-lived-access-token"),
+        QStringLiteral("old-refresh-token"), 3600)};
+    state.refreshStatus = 500;
+    state.refreshBody = sessionResponse(QStringLiteral("new-access-token"),
+        QStringLiteral("rotated-refresh-token"));
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), tokenPath);
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.firstName(), QStringLiteral("Amina"), 5000);
+    QSignalSpy statusChanged(&controller, &SessionController::statusChanged);
+    QVERIFY(statusChanged.isValid());
+
+    state.profileUnauthorizedResponses = 1;
+    controller.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 1, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(statusChanged.count() > 0, 5000);
+    QVERIFY(controller.signedIn());
+    QCOMPARE(loadRefreshToken(tokenPath), QStringLiteral("old-refresh-token"));
+
+    state.refreshStatus = 200;
+    QVERIFY(QMetaObject::invokeMethod(&controller, "refreshIfNeeded", Qt::DirectConnection));
+    QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(loadRefreshToken(tokenPath), QStringLiteral("rotated-refresh-token"), 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 3, 5000);
+    QVERIFY(controller.signedIn());
+}
+
+void SessionControllerTest::rejectedRefreshDiscardsQueuedRequests()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString tokenPath = directory.filePath(QStringLiteral("refresh-token.bin"));
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse(QStringLiteral("old-access-token"),
+        QStringLiteral("old-refresh-token"))};
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), tokenPath);
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.firstName(), QStringLiteral("Amina"), 5000);
+    state.profileUnauthorizedResponses = 1;
+    state.refreshStatus = 401;
+    controller.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 1, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(!controller.signedIn(), 5000);
+    QVERIFY(loadRefreshToken(tokenPath).isEmpty());
+
+    state.sessionBody = sessionResponse(QStringLiteral("new-access-token"),
+        QStringLiteral("new-refresh-token"), 30);
+    state.refreshStatus = 200;
+    state.refreshBody = sessionResponse(QStringLiteral("rotated-access-token"),
+        QStringLiteral("rotated-refresh-token"));
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 3, 5000);
+    QVERIFY(controller.signedIn());
+    QVERIFY(QMetaObject::invokeMethod(&controller, "refreshIfNeeded", Qt::DirectConnection));
+    QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(loadRefreshToken(tokenPath), QStringLiteral("rotated-refresh-token"), 5000);
+    QTest::qWait(100);
+    QCOMPARE(state.profileRequests, 3);
+    QVERIFY(controller.signedIn());
+}
+
+void SessionControllerTest::retriesUnauthorizedRequestOnceAfterRefresh()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.refreshBody = sessionResponse(QStringLiteral("new-access-token"),
+        QStringLiteral("rotated-refresh-token"));
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.firstName(), QStringLiteral("Amina"), 5000);
+    state.profileUnauthorizedResponses = 2;
+    controller.reload();
+
+    QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 3, 5000);
+    QCOMPARE(state.profileUnauthorizedResponses, 0);
+    QVERIFY(state.profileRequest.toLower().contains(QByteArrayLiteral("authorization: bearer new-access-token")));
+    QVERIFY(controller.signedIn());
 }
 
 void SessionControllerTest::refreshesNearExpirySessionOnce()
