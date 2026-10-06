@@ -4,8 +4,10 @@
 #include "home_json.h"
 
 #include <QDateTime>
+#include <QHash>
 #include <QList>
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QTimer>
 #include <QVariantList>
@@ -68,6 +70,8 @@ private slots:
 private:
     void onCompleted(const QString& op, quint64 requestId, int status, const QByteArray& body);
     void onFailed(const QString& op, quint64 requestId, int status, const QString& message);
+    bool isCurrentResponse(const QString& op, quint64 requestId) const;
+    void finishTrackedResponse(quint64 requestId);
     void onAuthenticationRequired(const QString& op, quint64 requestId);
     void startRefresh();
     void applySession(const SessionTokens& session, bool isRefresh);
@@ -100,4 +104,18 @@ private:
     bool refreshInFlight_ = false;
     QTimer refreshTimer_;
     QTimer activeRefreshTimer_;
+    quint64 latestProfileRequestId_ = 0;
+    quint64 latestProfileUpdateRequestId_ = 0;
+    quint64 latestRoomsRequestId_ = 0;
+    quint64 latestWeatherRequestId_ = 0;
+    quint64 profileMutationGeneration_ = 0;
+    quint64 homeMutationGeneration_ = 0;
+    QHash<quint64, quint64> profileRequestGenerations_;
+    QHash<quint64, bool> profileRequestsDuringMutation_;
+    QSet<quint64> pendingProfileMutations_;
+    QHash<quint64, quint64> roomRequestGenerations_;
+    QHash<quint64, bool> roomRequestsDuringMutation_;
+    QSet<quint64> pendingHomeMutations_;
+    QHash<quint64, QString> entityKeysByRequestId_;
+    QHash<QString, quint64> latestEntityRequestIds_;
 };

@@ -120,11 +120,12 @@ QNetworkRequest ApiClient::makeRequest(const QUrl& url, bool authorize, bool rep
     return request;
 }
 
-void ApiClient::send(const QString& op, const QByteArray& method, const QUrl& url, const QByteArray& body, bool authorize, bool represent, bool includeKey)
+void ApiClient::send(const QString& op, const QByteArray& method, const QUrl& url, const QByteArray& body,
+    bool authorize, bool represent, bool includeKey, const QString& resourceId)
 {
     const quint64 requestId = ++nextRequestId_;
     pendingRequests_.insert(requestId, {op, method, url, body, authorize, represent, includeKey});
-    emit requestStarted(op, requestId);
+    emit requestStarted(op, requestId, resourceId);
     sendPendingRequest(requestId);
 }
 
@@ -229,7 +230,7 @@ void ApiClient::updateProfile(const QString& userId, const QString& firstName, c
     const QJsonObject body{{QStringLiteral("first_name"), firstName}, {QStringLiteral("city"), cityValue}};
     send(QStringLiteral("profile-update"), "PATCH",
         QUrl(baseUrl_ + QStringLiteral("/rest/v1/profiles?id=eq.") + userId + QStringLiteral("&select=id,first_name,city")),
-        objectJson(body), true, true, true);
+        objectJson(body), true, true, true, userId);
 }
 
 void ApiClient::fetchRooms()
@@ -263,7 +264,7 @@ void ApiClient::updateRoom(const QString& id, const QString& name)
     const QJsonObject body{{QStringLiteral("name"), name}};
     send(QStringLiteral("room-update"), "PATCH",
         QUrl(baseUrl_ + QStringLiteral("/rest/v1/rooms?id=eq.") + id + QStringLiteral("&select=id,name,position")),
-        objectJson(body), true, true, true);
+        objectJson(body), true, true, true, id);
 }
 
 void ApiClient::deleteRoom(const QString& id)
@@ -273,7 +274,7 @@ void ApiClient::deleteRoom(const QString& id)
     }
     send(QStringLiteral("room-delete"), "DELETE",
         QUrl(baseUrl_ + QStringLiteral("/rest/v1/rooms?id=eq.") + id + QStringLiteral("&select=id")),
-        QByteArray(), true, true, true);
+        QByteArray(), true, true, true, id);
 }
 
 void ApiClient::insertDevice(const QString& roomId, const QString& name, const QString& kind, int position)
@@ -309,7 +310,7 @@ void ApiClient::setDeviceOn(const QString& id, bool on)
     send(QStringLiteral("device-on"), "PATCH",
         QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id
             + QStringLiteral("&select=id,room_id,name,kind,is_on,celsius,reading_at,position")),
-        objectJson(body), true, true, true);
+        objectJson(body), true, true, true, id);
 }
 
 void ApiClient::setReading(const QString& id, double celsius, const QDateTime& readingAt)
@@ -327,7 +328,7 @@ void ApiClient::setReading(const QString& id, double celsius, const QDateTime& r
     send(QStringLiteral("device-reading"), "PATCH",
         QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id
             + QStringLiteral("&select=id,room_id,name,kind,is_on,celsius,reading_at,position")),
-        objectJson(body), true, true, true);
+        objectJson(body), true, true, true, id);
 }
 
 void ApiClient::updateDeviceName(const QString& id, const QString& name)
@@ -339,7 +340,7 @@ void ApiClient::updateDeviceName(const QString& id, const QString& name)
     send(QStringLiteral("device-update"), "PATCH",
         QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id
             + QStringLiteral("&select=id,room_id,name,kind,is_on,celsius,reading_at,position")),
-        objectJson(body), true, true, true);
+        objectJson(body), true, true, true, id);
 }
 
 void ApiClient::deleteDevice(const QString& id)
@@ -349,7 +350,7 @@ void ApiClient::deleteDevice(const QString& id)
     }
     send(QStringLiteral("device-delete"), "DELETE",
         QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id + QStringLiteral("&select=id")),
-        QByteArray(), true, true, true);
+        QByteArray(), true, true, true, id);
 }
 
 void ApiClient::geocode(const QString& city)

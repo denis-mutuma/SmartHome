@@ -16,6 +16,14 @@
 
 namespace {
 
+struct DeferredResponse
+{
+    QTcpSocket* socket;
+    int status;
+    QByteArray reason;
+    QByteArray payload;
+};
+
 struct AuthServerState
 {
     QByteArray sessionBody;
@@ -39,6 +47,19 @@ struct AuthServerState
     QByteArray forecastRequest;
     int profileRequests = 0;
     int roomsRequests = 0;
+    int deviceUpdateRequests = 0;
+    int geocodingRequests = 0;
+    int forecastRequests = 0;
+    bool deferProfileResponses = false;
+    bool deferRoomsResponses = false;
+    bool deferDeviceUpdateResponses = false;
+    bool deferGeocodingResponses = false;
+    bool deferForecastResponses = false;
+    QList<DeferredResponse> pendingProfileResponses;
+    QList<DeferredResponse> pendingRoomsResponses;
+    QList<DeferredResponse> pendingDeviceUpdateResponses;
+    QList<DeferredResponse> pendingGeocodingResponses;
+    QList<DeferredResponse> pendingForecastResponses;
     QByteArray profileBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":null}])");
     QByteArray updatedProfileBody = QByteArrayLiteral(
@@ -58,6 +79,15 @@ struct AuthServerState
     int refreshRequests = 0;
     int refreshStatus = 200;
 };
+
+void writeResponse(const DeferredResponse& response)
+{
+    response.socket->write(QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(response.status) + ' '
+        + response.reason + QByteArrayLiteral("\r\nContent-Type: application/json\r\nContent-Length: ")
+        + QByteArray::number(response.payload.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n")
+        + response.payload);
+    response.socket->disconnectFromHost();
+}
 
 void startAuthServer(QTcpServer& server, AuthServerState& state)
 {
@@ -92,6 +122,7 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
             int status = 200;
             QByteArray reason = QByteArrayLiteral("OK");
             QByteArray payload = state.sessionBody;
+            QList<DeferredResponse>* deferredResponses = nullptr;
             if (path == QByteArrayLiteral("/auth/v1/token?grant_type=password")) {
                 state.loginRequest = *request;
             } else if (path == QByteArrayLiteral("/auth/v1/signup")) {
@@ -111,6 +142,9 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 ++state.profileRequests;
                 state.profileRequest = *request;
                 payload = state.profileBody;
+                if (state.deferProfileResponses) {
+                    deferredResponses = &state.pendingProfileResponses;
+                }
             } else if (requestLine.startsWith(QByteArrayLiteral("PATCH /rest/v1/profiles?id=eq."))) {
                 state.profileUpdateRequest = *request;
                 payload = state.updatedProfileBody;
@@ -118,6 +152,9 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 ++state.roomsRequests;
                 state.roomsRequest = *request;
                 payload = state.roomsBody;
+                if (state.deferRoomsResponses) {
+                    deferredResponses = &state.pendingRoomsResponses;
+                }
             } else if (requestLine.startsWith(QByteArrayLiteral("POST /rest/v1/rooms?select="))) {
                 state.roomInsertRequest = *request;
                 status = 201;
@@ -150,9 +187,13 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                     row.insert(QStringLiteral("reading_at"), patch.value(QStringLiteral("reading_at")));
                     payload = QJsonDocument(QJsonArray{row}).toJson(QJsonDocument::Compact);
                 } else if (patch.contains(QStringLiteral("name"))) {
+                    ++state.deviceUpdateRequests;
                     state.deviceUpdateRequest = *request;
                     row.insert(QStringLiteral("name"), patch.value(QStringLiteral("name")));
                     payload = QJsonDocument(QJsonArray{row}).toJson(QJsonDocument::Compact);
+                    if (state.deferDeviceUpdateResponses) {
+                        deferredResponses = &state.pendingDeviceUpdateResponses;
+                    }
                 } else if (state.failDeviceToggle) {
                     state.deviceToggleRequest = *request;
                     status = 500;
@@ -167,19 +208,29 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 state.deviceDeleteRequest = *request;
                 payload = QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174020"}])");
             } else if (requestLine.startsWith(QByteArrayLiteral("GET /geocode?"))) {
+                ++state.geocodingRequests;
                 state.geocodingRequest = *request;
                 payload = state.geocodingBody;
+                if (state.deferGeocodingResponses) {
+                    deferredResponses = &state.pendingGeocodingResponses;
+                }
             } else if (requestLine.startsWith(QByteArrayLiteral("GET /forecast?"))) {
+                ++state.forecastRequests;
                 state.forecastRequest = *request;
                 payload = state.forecastBody;
+                if (state.deferForecastResponses) {
+                    deferredResponses = &state.pendingForecastResponses;
+                }
             } else {
                 return;
             }
             socket->setProperty("responded", true);
-            socket->write(QByteArrayLiteral("HTTP/1.1 ") + QByteArray::number(status) + ' ' + reason
-                + QByteArrayLiteral("\r\nContent-Type: application/json\r\nContent-Length: ")
-                + QByteArray::number(payload.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n")
-                + payload);
+            const DeferredResponse response{socket, status, reason, payload};
+            if (deferredResponses != nullptr) {
+                deferredResponses->append(response);
+            } else {
+                writeResponse(response);
+            }
         });
     });
 }
@@ -201,6 +252,53 @@ QJsonObject requestBody(const QByteArray& request)
 {
     const qsizetype headerEnd = request.indexOf(QByteArrayLiteral("\r\n\r\n"));
     return QJsonDocument::fromJson(request.mid(headerEnd + 4)).object();
+}
+
+QByteArray profileResponse(const QString& firstName)
+{
+    return QJsonDocument(QJsonArray{QJsonObject{
+        {QStringLiteral("id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174000")},
+        {QStringLiteral("first_name"), firstName},
+        {QStringLiteral("city"), QJsonValue(QJsonValue::Null)}}})
+        .toJson(QJsonDocument::Compact);
+}
+
+QByteArray roomResponse(const QString& deviceName)
+{
+    const QString roomId = QStringLiteral("123e4567-e89b-12d3-a456-426614174010");
+    const QString deviceId = QStringLiteral("123e4567-e89b-12d3-a456-426614174020");
+    return QJsonDocument(QJsonArray{QJsonObject{
+        {QStringLiteral("id"), roomId},
+        {QStringLiteral("name"), QStringLiteral("Office")},
+        {QStringLiteral("position"), 0},
+        {QStringLiteral("devices"), QJsonArray{QJsonObject{
+            {QStringLiteral("id"), deviceId},
+            {QStringLiteral("room_id"), roomId},
+            {QStringLiteral("name"), deviceName},
+            {QStringLiteral("kind"), QStringLiteral("light")},
+            {QStringLiteral("is_on"), false},
+            {QStringLiteral("celsius"), QJsonValue(QJsonValue::Null)},
+            {QStringLiteral("reading_at"), QJsonValue(QJsonValue::Null)},
+            {QStringLiteral("position"), 0}}}}}})
+        .toJson(QJsonDocument::Compact);
+}
+
+QByteArray geocodingResponse(const QString& name, double latitude, double longitude)
+{
+    return QJsonDocument(QJsonObject{{QStringLiteral("results"), QJsonArray{QJsonObject{
+        {QStringLiteral("name"), name},
+        {QStringLiteral("latitude"), latitude},
+        {QStringLiteral("longitude"), longitude}}}}})
+        .toJson(QJsonDocument::Compact);
+}
+
+QByteArray forecastResponse(double temperature)
+{
+    return QJsonDocument(QJsonObject{{QStringLiteral("current"), QJsonObject{
+        {QStringLiteral("temperature_2m"), temperature},
+        {QStringLiteral("weather_code"), 0},
+        {QStringLiteral("is_day"), 1}}}})
+        .toJson(QJsonDocument::Compact);
 }
 
 } // namespace
@@ -225,6 +323,9 @@ private slots:
     void updatesOnlyStaleThermometer();
     void loadsWeatherForProfileCity();
     void reloadFetchesProfileAndRooms();
+    void ignoresOlderDeviceMutationResponse();
+    void ignoresOlderWeatherForecastResponse();
+    void ignoresWeatherResponseAfterCityCleared();
 };
 
 void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
@@ -703,9 +804,158 @@ void SessionControllerTest::reloadFetchesProfileAndRooms()
     QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 1, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(state.roomsRequests, 1, 5000);
 
+    state.deferProfileResponses = true;
+    state.deferRoomsResponses = true;
+    state.profileBody = profileResponse(QStringLiteral("Older profile"));
+    state.roomsBody = roomResponse(QStringLiteral("Older light"));
     controller.reload();
     QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 2, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(state.roomsRequests, 2, 5000);
+    state.profileBody = profileResponse(QStringLiteral("Latest profile"));
+    state.roomsBody = roomResponse(QStringLiteral("Latest light"));
+    controller.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 3, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.roomsRequests, 3, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingProfileResponses.size(), 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingRoomsResponses.size(), 2, 5000);
+
+    writeResponse(state.pendingProfileResponses.takeAt(1));
+    writeResponse(state.pendingRoomsResponses.takeAt(1));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.firstName(), QStringLiteral("Latest profile"), 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+    const QVariantMap room = controller.rooms().first().toMap();
+    QCOMPARE(room.value(QStringLiteral("devices")).toList().first().toMap()
+                 .value(QStringLiteral("name")).toString(), QStringLiteral("Latest light"));
+
+    const DeferredResponse olderProfile = state.pendingProfileResponses.takeFirst();
+    const DeferredResponse olderRooms = state.pendingRoomsResponses.takeFirst();
+    writeResponse(olderProfile);
+    writeResponse(olderRooms);
+    QTRY_COMPARE_WITH_TIMEOUT(olderProfile.socket->state(), QAbstractSocket::UnconnectedState, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(olderRooms.socket->state(), QAbstractSocket::UnconnectedState, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(state.pendingProfileResponses.isEmpty()
+        && state.pendingRoomsResponses.isEmpty(), 5000);
+    QTest::qWait(50);
+    QCOMPARE(controller.firstName(), QStringLiteral("Latest profile"));
+    QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList().first().toMap()
+                 .value(QStringLiteral("name")).toString(), QStringLiteral("Latest light"));
+}
+
+void SessionControllerTest::ignoresOlderDeviceMutationResponse()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.roomsBody = roomResponse(QStringLiteral("Desk light"));
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.roomsRequests, 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+    state.deferDeviceUpdateResponses = true;
+    const QString deviceId = QStringLiteral("123e4567-e89b-12d3-a456-426614174020");
+    QVERIFY(controller.renameDevice(deviceId, QStringLiteral("Older name")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.deviceUpdateRequests, 1, 5000);
+    QVERIFY(controller.renameDevice(deviceId, QStringLiteral("Latest name")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.deviceUpdateRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceUpdateResponses.size(), 2, 5000);
+
+    const DeferredResponse latest = state.pendingDeviceUpdateResponses.takeAt(1);
+    writeResponse(latest);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
+                                  .first().toMap().value(QStringLiteral("name")).toString(),
+        QStringLiteral("Latest name"), 5000);
+    const DeferredResponse older = state.pendingDeviceUpdateResponses.takeFirst();
+    writeResponse(older);
+    QTRY_COMPARE_WITH_TIMEOUT(older.socket->state(), QAbstractSocket::UnconnectedState, 5000);
+    QTest::qWait(50);
+    QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
+                 .first().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Latest name"));
+}
+
+void SessionControllerTest::ignoresOlderWeatherForecastResponse()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.profileBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":"Old City"}])");
+    state.geocodingBody = geocodingResponse(QStringLiteral("Old City"), 1.0, 2.0);
+    state.forecastBody = forecastResponse(12.0);
+    state.deferGeocodingResponses = true;
+    state.deferForecastResponses = true;
+    startAuthServer(server, state);
+
+    const QString baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+    ApiClient::WeatherEndpoints endpoints{
+        QUrl(baseUrl + QStringLiteral("/geocode")), QUrl(baseUrl + QStringLiteral("/forecast"))};
+    SessionController controller(baseUrl, QStringLiteral("public-anon-key"),
+        directory.filePath(QStringLiteral("refresh-token.bin")), endpoints);
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.geocodingRequests, 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingGeocodingResponses.size(), 1, 5000);
+
+    writeResponse(state.pendingGeocodingResponses.takeFirst());
+    QTRY_COMPARE_WITH_TIMEOUT(state.forecastRequests, 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingForecastResponses.size(), 1, 5000);
+    state.updatedProfileBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":"New City"}])");
+    state.geocodingBody = geocodingResponse(QStringLiteral("New City"), 3.0, 4.0);
+    state.forecastBody = forecastResponse(25.0);
+    QVERIFY(controller.saveSettings(QStringLiteral("Amina"), QStringLiteral("New City")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.geocodingRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingGeocodingResponses.size(), 1, 5000);
+
+    writeResponse(state.pendingGeocodingResponses.takeFirst());
+    QTRY_COMPARE_WITH_TIMEOUT(state.forecastRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingForecastResponses.size(), 2, 5000);
+    writeResponse(state.pendingForecastResponses.takeAt(1));
+    QTRY_VERIFY_WITH_TIMEOUT(controller.weatherLine().contains(QStringLiteral("25.0 °C")), 5000);
+    const DeferredResponse olderForecast = state.pendingForecastResponses.takeFirst();
+    writeResponse(olderForecast);
+    QTRY_COMPARE_WITH_TIMEOUT(olderForecast.socket->state(), QAbstractSocket::UnconnectedState, 5000);
+    QTest::qWait(50);
+    QVERIFY(controller.weatherLine().contains(QStringLiteral("25.0 °C")));
+}
+
+void SessionControllerTest::ignoresWeatherResponseAfterCityCleared()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.profileBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":"Nairobi"}])");
+    state.deferForecastResponses = true;
+    startAuthServer(server, state);
+
+    const QString baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+    ApiClient::WeatherEndpoints endpoints{
+        QUrl(baseUrl + QStringLiteral("/geocode")), QUrl(baseUrl + QStringLiteral("/forecast"))};
+    SessionController controller(baseUrl, QStringLiteral("public-anon-key"),
+        directory.filePath(QStringLiteral("refresh-token.bin")), endpoints);
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.forecastRequests, 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingForecastResponses.size(), 1, 5000);
+
+    state.updatedProfileBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":null}])");
+    QVERIFY(controller.saveSettings(QStringLiteral("Amina"), QString()));
+    QTRY_VERIFY_WITH_TIMEOUT(controller.city().isEmpty(), 5000);
+    QVERIFY(controller.weatherLine().isEmpty());
+
+    const DeferredResponse staleForecast = state.pendingForecastResponses.takeFirst();
+    writeResponse(staleForecast);
+    QTRY_COMPARE_WITH_TIMEOUT(staleForecast.socket->state(), QAbstractSocket::UnconnectedState, 5000);
+    QTest::qWait(50);
+    QVERIFY(controller.weatherLine().isEmpty());
 }
 
 QTEST_MAIN(SessionControllerTest)
