@@ -4,6 +4,7 @@
 #include "home_rules.h"
 #include "token_store.h"
 
+#include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -38,8 +39,14 @@ SessionController::SessionController(QString baseUrl, QString anonKey, QString t
     connect(&api_, &ApiClient::failed, this, &SessionController::onFailed);
     connect(&api_, &ApiClient::authenticationRequired, this, &SessionController::onAuthenticationRequired);
     connect(&refreshTimer_, &QTimer::timeout, this, &SessionController::refreshIfNeeded);
+    connect(&activeRefreshTimer_, &QTimer::timeout, this, &SessionController::reload);
     refreshTimer_.setInterval(15000);
     refreshTimer_.start();
+    activeRefreshTimer_.setInterval(20000);
+    if (auto* guiApp = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
+        connect(guiApp, &QGuiApplication::applicationStateChanged, this,
+            [this](Qt::ApplicationState) { updatePolling(); });
+    }
     refreshToken_ = loadRefreshToken(tokenFilePath_);
     if (!refreshToken_.isEmpty()) {
         startRefresh();
@@ -117,6 +124,16 @@ void SessionController::signOut()
     const bool tokenCleared = clearRefreshToken(tokenFilePath_);
     clearLocal();
     setStatus(tokenCleared ? QString() : tr("Could not clear the session."));
+}
+
+void SessionController::reload()
+{
+    if (!signedIn_) {
+        return;
+    }
+    api_.fetchProfile();
+    api_.fetchRooms();
+    updateWeather();
 }
 
 bool SessionController::saveSettings(const QString& firstName, const QString& city)
@@ -676,6 +693,7 @@ void SessionController::applySession(const SessionTokens& session, bool isRefres
     email_ = session.email;
     api_.setAccessToken(accessToken_);
     signedIn_ = true;
+    updatePolling();
     if (!wasSignedIn) {
         emit signedInChanged();
     }
@@ -699,6 +717,7 @@ void SessionController::clearLocal()
     const bool hadWeather = !weatherLine_.isEmpty() || !weatherIconFile_.isEmpty();
     const bool hadRooms = !roomRows_.isEmpty();
     signedIn_ = false;
+    activeRefreshTimer_.stop();
     accessToken_.clear();
     refreshToken_.clear();
     accessTokenExpiresAt_ = {};
@@ -787,6 +806,18 @@ void SessionController::updateWeather()
         return;
     }
     api_.geocode(city_);
+}
+
+void SessionController::updatePolling()
+{
+    auto* guiApp = qobject_cast<QGuiApplication*>(QCoreApplication::instance());
+    if (signedIn_ && guiApp && guiApp->applicationState() == Qt::ApplicationActive) {
+        if (!activeRefreshTimer_.isActive()) {
+            activeRefreshTimer_.start();
+        }
+    } else {
+        activeRefreshTimer_.stop();
+    }
 }
 
 void SessionController::clearPendingDeviceToggle(bool restore)

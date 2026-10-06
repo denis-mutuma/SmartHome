@@ -260,6 +260,7 @@ Window {
                                     onClicked: {
                                         root.settingsOpen = false
                                         root.selectedRoomId = roomDelegate.modelData.id
+                                        session.reload()
                                     }
 
                                     contentItem: Label {

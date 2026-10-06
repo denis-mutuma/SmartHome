@@ -37,6 +37,8 @@ struct AuthServerState
     QByteArray deviceDeleteRequest;
     QByteArray geocodingRequest;
     QByteArray forecastRequest;
+    int profileRequests = 0;
+    int roomsRequests = 0;
     QByteArray profileBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":null}])");
     QByteArray updatedProfileBody = QByteArrayLiteral(
@@ -106,12 +108,14 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 reason = QByteArrayLiteral("No Content");
                 payload.clear();
             } else if (path == QByteArrayLiteral("/rest/v1/profiles?select=id,first_name,city")) {
+                ++state.profileRequests;
                 state.profileRequest = *request;
                 payload = state.profileBody;
             } else if (requestLine.startsWith(QByteArrayLiteral("PATCH /rest/v1/profiles?id=eq."))) {
                 state.profileUpdateRequest = *request;
                 payload = state.updatedProfileBody;
             } else if (requestLine.startsWith(QByteArrayLiteral("GET /rest/v1/rooms?select="))) {
+                ++state.roomsRequests;
                 state.roomsRequest = *request;
                 payload = state.roomsBody;
             } else if (requestLine.startsWith(QByteArrayLiteral("POST /rest/v1/rooms?select="))) {
@@ -220,6 +224,7 @@ private slots:
     void renamesAndDeletesRoom();
     void updatesOnlyStaleThermometer();
     void loadsWeatherForProfileCity();
+    void reloadFetchesProfileAndRooms();
 };
 
 void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
@@ -681,6 +686,26 @@ void SessionControllerTest::loadsWeatherForProfileCity()
     QVERIFY(!state.geocodingRequest.toLower().contains(QByteArrayLiteral("authorization:")));
     QVERIFY(!state.forecastRequest.toLower().contains(QByteArrayLiteral("authorization:")));
     QCOMPARE(controller.weatherIcon(), QStringLiteral("qrc:/qt/qml/SmartHome/assets/icons/sun-cloud.svg"));
+}
+
+void SessionControllerTest::reloadFetchesProfileAndRooms()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.roomsRequests, 1, 5000);
+
+    controller.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.roomsRequests, 2, 5000);
 }
 
 QTEST_MAIN(SessionControllerTest)

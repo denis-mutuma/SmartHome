@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Network Test)
+find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Gui Network Test)
 
 qt_standard_project_setup(REQUIRES 6.11)
 set(QT_USE_TARGET_ANDROID_BUILD_DIR TRUE CACHE BOOL "Separate Android build directory for each executable")
@@ -56,7 +56,7 @@ qt_add_executable(tst_session_controller
     src/app/session_controller.cpp
     src/app/session_controller.h
 )
-target_link_libraries(tst_session_controller PRIVATE smarthome_core Qt6::Test)
+target_link_libraries(tst_session_controller PRIVATE smarthome_core Qt6::Test Qt6::Gui)
 target_compile_definitions(tst_session_controller PRIVATE
     "SMARTHOME_SUPABASE_URL=\"${SMARTHOME_SUPABASE_URL}\""
     "SMARTHOME_SUPABASE_ANON_KEY=\"${SMARTHOME_SUPABASE_ANON_KEY}\"")
