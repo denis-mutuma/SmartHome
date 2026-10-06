@@ -254,6 +254,12 @@ QJsonObject requestBody(const QByteArray& request)
     return QJsonDocument::fromJson(request.mid(headerEnd + 4)).object();
 }
 
+bool setPollingState(SessionController& controller, Qt::ApplicationState state)
+{
+    return QMetaObject::invokeMethod(&controller, "updatePolling", Qt::DirectConnection,
+        Q_ARG(Qt::ApplicationState, state));
+}
+
 QByteArray profileResponse(const QString& firstName)
 {
     return QJsonDocument(QJsonArray{QJsonObject{
@@ -322,6 +328,7 @@ private slots:
     void renamesAndDeletesRoom();
     void updatesOnlyStaleThermometer();
     void loadsWeatherForProfileCity();
+    void pollingFollowsSignInAndApplicationState();
     void reloadFetchesProfileAndRooms();
     void ignoresOlderDeviceMutationResponse();
     void ignoresOlderWeatherForecastResponse();
@@ -787,6 +794,57 @@ void SessionControllerTest::loadsWeatherForProfileCity()
     QVERIFY(!state.geocodingRequest.toLower().contains(QByteArrayLiteral("authorization:")));
     QVERIFY(!state.forecastRequest.toLower().contains(QByteArrayLiteral("authorization:")));
     QCOMPARE(controller.weatherIcon(), QStringLiteral("qrc:/qt/qml/SmartHome/assets/icons/sun-cloud.svg"));
+
+    state.updatedProfileBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":"Mombasa"}])");
+    state.geocodingBody = geocodingResponse(QStringLiteral("Mombasa"), -4.05, 39.67);
+    state.forecastBody = forecastResponse(25.0);
+    QVERIFY(controller.saveSettings(QStringLiteral("Amina"), QStringLiteral("Mombasa")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.geocodingRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.forecastRequests, 2, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(controller.weatherLine().contains(QStringLiteral("25.0 °C")), 5000);
+    QVERIFY(state.geocodingRequest.contains(QByteArrayLiteral("name=Mombasa")));
+    QVERIFY(state.forecastRequest.contains(QByteArrayLiteral("latitude=-4.050000")));
+    QVERIFY(state.forecastRequest.contains(QByteArrayLiteral("longitude=39.670000")));
+}
+
+void SessionControllerTest::pollingFollowsSignInAndApplicationState()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    startAuthServer(server, state);
+
+    QCOMPARE(SessionController::ActiveRefreshIntervalMs, 20000);
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")),
+        ApiClient::WeatherEndpoints{}, 80);
+    QVERIFY(setPollingState(controller, Qt::ApplicationActive));
+    QTest::qWait(200);
+    QCOMPARE(state.profileRequests, 0);
+    QCOMPARE(state.roomsRequests, 0);
+
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.roomsRequests, 1, 5000);
+    QVERIFY(setPollingState(controller, Qt::ApplicationInactive));
+    const int inactiveProfileRequests = state.profileRequests;
+    const int inactiveRoomsRequests = state.roomsRequests;
+    QTest::qWait(240);
+    QCOMPARE(state.profileRequests, inactiveProfileRequests);
+    QCOMPARE(state.roomsRequests, inactiveRoomsRequests);
+
+    QVERIFY(setPollingState(controller, Qt::ApplicationActive));
+    QTRY_VERIFY_WITH_TIMEOUT(state.profileRequests > inactiveProfileRequests, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(state.roomsRequests > inactiveRoomsRequests, 2000);
+    controller.signOut();
+    const int signedOutProfileRequests = state.profileRequests;
+    const int signedOutRoomsRequests = state.roomsRequests;
+    QTest::qWait(240);
+    QCOMPARE(state.profileRequests, signedOutProfileRequests);
+    QCOMPARE(state.roomsRequests, signedOutRoomsRequests);
 }
 
 void SessionControllerTest::reloadFetchesProfileAndRooms()
