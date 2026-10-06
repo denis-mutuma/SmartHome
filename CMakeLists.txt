@@ -62,6 +62,9 @@ target_compile_definitions(tst_session_controller PRIVATE
     "SMARTHOME_SUPABASE_ANON_KEY=\"${SMARTHOME_SUPABASE_ANON_KEY}\"")
 add_test(NAME session_controller COMMAND tst_session_controller)
 if(ANDROID)
+    foreach(android_test_target IN ITEMS tst_home_rules tst_home_json tst_token_store tst_api_client)
+        target_link_libraries(${android_test_target} PRIVATE Qt6::Gui)
+    endforeach()
     set_property(TARGET tst_token_store PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
         "${CMAKE_SOURCE_DIR}/android")
 endif()
