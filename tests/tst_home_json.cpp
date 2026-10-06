@@ -138,6 +138,12 @@ void HomeJsonTest::thermometerDevice()
     QCOMPARE(devices->at(0).readingAt,
         QDateTime::fromString(QStringLiteral("2026-10-03T12:00:00+00:00"), Qt::ISODate));
     QCOMPARE(devices->at(0).position, 1);
+
+    const std::optional<QList<DeviceRow>> missingReading = parseDevices(QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","room_id":"123e4567-e89b-12d3-a456-426614174000","name":"Probe","kind":"thermometer","is_on":null,"celsius":22.0,"reading_at":null}])"));
+    QVERIFY(missingReading.has_value());
+    QCOMPARE(missingReading->size(), 1);
+    QVERIFY(!missingReading->first().readingAt.isValid());
 }
 
 void HomeJsonTest::invalidDevices_data()

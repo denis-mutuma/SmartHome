@@ -28,7 +28,7 @@ Branch `smarthome-app`. Do not push. Conventional Commits: `type(scope): subject
 - Password 8–72 characters. Names 1–40. City empty or 1–80. Email at most 254.
 - Greeting bands are 05:00–11:59, 12:00–16:59, 17:00–20:59, and 21:00–04:59.
 - Poll every 20 seconds only while `Qt.application.state` is `Qt.ApplicationActive`.
-- A thermometer write happens only when `reading_at` is older than 15 minutes. Keep the value inside 18.0–28.0. A new one starts at 22.0.
+- A thermometer write happens when `reading_at` is null or at least 15 minutes old. Keep the value inside 18.0–28.0; thermometer `celsius` is non-null. A new one starts at 22.0.
 - Access token lifetime is the Supabase default of 1 hour. Sign-in lasts until logout. There is no 5-in-15 lockout.
 - Colors are `#18171C`, `#2F2F37`, `#536DED`, and `#FFFFFF`.
 
@@ -36,7 +36,7 @@ Branch `smarthome-app`. Do not push. Conventional Commits: `type(scope): subject
 
 Auth: `POST /auth/v1/signup`, `POST /auth/v1/token?grant_type=password`, `POST /auth/v1/token?grant_type=refresh_token`, `POST /auth/v1/logout`. Data: `profiles`, `rooms`, `devices` through PostgREST. Send `apikey` and `Authorization: Bearer`. Weather uses the two Open-Meteo URLs in `docs/design.md`, not Supabase.
 
-Schema lives in `supabase/migrations/0001_home.sql`. Apply it in the Supabase SQL editor. The CLI is not required.
+Schema changes live in `supabase/migrations/`. Apply every numbered SQL migration in order in the Supabase SQL editor. Review a migration's preflight queries and resolve reported rows before continuing; the CLI is not required.
 
 ## Checks
 

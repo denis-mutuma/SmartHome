@@ -7,7 +7,7 @@ Read `AGENTS.md` and `docs/design.md` before changing the app.
 ## Run the desktop app
 
 1. Create a Supabase Free project and turn off email confirmation.
-2. Run `supabase/migrations/0001_home.sql` in the SQL editor.
+2. Run every numbered SQL migration in `supabase/migrations/` in order in the SQL editor. Resolve any preflight findings before continuing.
 3. Copy `config.example.cmake` to `config.local.cmake` and fill in the project URL and anon key.
 4. Configure with `C:\Qt\6.11.2\mingw_64` and build `appSmartHome`.
 
