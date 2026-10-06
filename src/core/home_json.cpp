@@ -70,7 +70,8 @@ std::optional<DeviceRow> deviceFrom(const QJsonValue& value, const QString& pare
     const bool thermometer = kind.isString() && kind.toString() == QLatin1String("thermometer");
     if (!id.isString() || !isUuid(id.toString()) || !isUuid(roomId)
         || !name.isString() || name.toString().isEmpty() || !kind.isString() || !switchableKind(kind.toString())
-        || (thermometer && ((!isOn.isNull() && !isOn.isUndefined()) || !celsius.isDouble() || !readingAt.isString()))
+        || (thermometer && ((!isOn.isNull() && !isOn.isUndefined()) || !celsius.isDouble()
+            || (!readingAt.isString() && !readingAt.isNull())))
         || (!thermometer && (!isOn.isBool() || (!celsius.isNull() && !celsius.isUndefined())
             || (!readingAt.isNull() && !readingAt.isUndefined())))) {
         return std::nullopt;
@@ -87,9 +88,11 @@ std::optional<DeviceRow> deviceFrom(const QJsonValue& value, const QString& pare
     row.position = object.value(QLatin1String("position")).toInt();
     if (thermometer) {
         row.celsius = celsius.toDouble();
-        row.readingAt = timestampFrom(readingAt);
-        if (!row.readingAt.isValid()) {
-            return std::nullopt;
+        if (readingAt.isString()) {
+            row.readingAt = timestampFrom(readingAt);
+            if (!row.readingAt.isValid()) {
+                return std::nullopt;
+            }
         }
     } else {
         row.isOn = isOn.toBool();

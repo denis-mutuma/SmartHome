@@ -50,7 +50,7 @@ Decisions and screens use STAR. A Result without a number is incomplete. The API
 
 - Situation: Supabase does not simulate a sensor.
 - Task: Show a temperature that changes without a cron job.
-- Action: The client writes a new value only when `reading_at` is older than 15 minutes, clamped to 18.0–28.0. A new thermometer starts at 22.0.
+- Action: The client writes a new value when `reading_at` is null or at least 15 minutes old, clamped to 18.0–28.0. A thermometer's Celsius value is non-null; a new thermometer starts at 22.0.
 - Result: 0 Edge Function calls. An idle account writes 0 thermometer rows. The value stays inside an 10-degree span.
 
 ### Poll and weather
@@ -111,4 +111,4 @@ Weather:
 - `https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en&format=json`
 - `https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code,is_day`
 
-Schema file: `supabase/migrations/0001_home.sql`. Apply it once in the Supabase SQL editor. Desktop and release builds read the project URL and anon key from `config.local.cmake`. Both values are empty in `config.example.cmake`.
+Schema migrations live in `supabase/migrations/`. Apply each numbered SQL migration in order in the Supabase SQL editor, resolving any preflight findings first. Desktop and release builds read the project URL and anon key from `config.local.cmake`. Both values are empty in `config.example.cmake`.

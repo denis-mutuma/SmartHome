@@ -26,10 +26,11 @@ create table public.devices (
   reading_at timestamptz,
   position integer not null check (position >= 0),
   unique (room_id, position),
-  check (
+  constraint devices_thermometer_shape_check check (
     (
       kind = 'thermometer'
       and is_on is null
+      and celsius is not null
       and celsius between 18.0 and 28.0
     )
     or (

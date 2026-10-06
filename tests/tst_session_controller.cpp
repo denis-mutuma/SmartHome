@@ -338,6 +338,7 @@ private slots:
     void renamesAndDeletesDevice();
     void renamesAndDeletesRoom();
     void updatesOnlyStaleThermometer();
+    void updatesThermometerWithNullReadingTime();
     void loadsWeatherForProfileCity();
     void pollingFollowsSignInAndApplicationState();
     void reloadFetchesProfileAndRooms();
@@ -877,6 +878,31 @@ void SessionControllerTest::updatesOnlyStaleThermometer()
     QVERIFY(QDateTime::fromString(reading.value(QStringLiteral("reading_at")).toString(), Qt::ISODateWithMs).isValid());
     QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
         .at(1).toMap().value(QStringLiteral("celsius")).toDouble(), 22.4);
+}
+
+void SessionControllerTest::updatesThermometerWithNullReadingTime()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.roomsBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[{"id":"123e4567-e89b-12d3-a456-426614174030","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Probe","kind":"thermometer","is_on":null,"celsius":22.0,"reading_at":null,"position":0}]}])");
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_VERIFY_WITH_TIMEOUT(!state.deviceReadingRequest.isEmpty(), 5000);
+    const QJsonObject reading = requestBody(state.deviceReadingRequest);
+    QVERIFY(QDateTime::fromString(reading.value(QStringLiteral("reading_at")).toString(), Qt::ISODateWithMs)
+        .isValid());
+    const double updatedCelsius = reading.value(QStringLiteral("celsius")).toDouble();
+    QVERIFY(updatedCelsius >= 18.0 && updatedCelsius <= 28.0);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
+                                  .first().toMap().value(QStringLiteral("celsius")).toDouble(),
+        updatedCelsius, 5000);
 }
 
 void SessionControllerTest::loadsWeatherForProfileCity()
