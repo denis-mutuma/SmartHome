@@ -52,7 +52,7 @@ public:
     void forecast(double latitude, double longitude);
 
 signals:
-    void requestStarted(const QString& op, quint64 requestId);
+    void requestStarted(const QString& op, quint64 requestId, const QString& resourceId);
     void authenticationRequired(const QString& op, quint64 requestId);
     void completed(const QString& op, quint64 requestId, int status, const QByteArray& body);
     void failed(const QString& op, quint64 requestId, int status, const QString& message);
@@ -71,7 +71,8 @@ private:
     };
 
     QNetworkRequest makeRequest(const QUrl& url, bool authorize, bool represent, bool includeKey) const;
-    void send(const QString& op, const QByteArray& method, const QUrl& url, const QByteArray& body, bool authorize, bool represent, bool includeKey);
+    void send(const QString& op, const QByteArray& method, const QUrl& url, const QByteArray& body,
+        bool authorize, bool represent, bool includeKey, const QString& resourceId = {});
     void sendPendingRequest(quint64 requestId);
     bool guardConfig(const QString& op);
     bool guardUuid(const QString& op, const QString& id);

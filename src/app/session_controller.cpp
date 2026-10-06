@@ -38,6 +38,35 @@ SessionController::SessionController(QString baseUrl, QString anonKey, QString t
     connect(&api_, &ApiClient::completed, this, &SessionController::onCompleted);
     connect(&api_, &ApiClient::failed, this, &SessionController::onFailed);
     connect(&api_, &ApiClient::authenticationRequired, this, &SessionController::onAuthenticationRequired);
+    connect(&api_, &ApiClient::requestStarted, this,
+        [this](const QString& op, quint64 requestId, const QString& resourceId) {
+            if (op == QLatin1String("profile")) {
+                latestProfileRequestId_ = requestId;
+                profileRequestGenerations_.insert(requestId, profileMutationGeneration_);
+                profileRequestsDuringMutation_.insert(requestId, !pendingProfileMutations_.isEmpty());
+            } else if (op == QLatin1String("profile-update")) {
+                latestProfileUpdateRequestId_ = requestId;
+                ++profileMutationGeneration_;
+                pendingProfileMutations_.insert(requestId);
+            } else if (op == QLatin1String("rooms")) {
+                latestRoomsRequestId_ = requestId;
+                roomRequestGenerations_.insert(requestId, homeMutationGeneration_);
+                roomRequestsDuringMutation_.insert(requestId, !pendingHomeMutations_.isEmpty());
+            } else if (op == QLatin1String("geocode") || op == QLatin1String("forecast")) {
+                latestWeatherRequestId_ = requestId;
+            } else if (op.startsWith(QLatin1String("room-"))
+                || op.startsWith(QLatin1String("device-"))) {
+                ++homeMutationGeneration_;
+                pendingHomeMutations_.insert(requestId);
+                if (!resourceId.isEmpty()) {
+                    const QString prefix = op.startsWith(QLatin1String("room-"))
+                        ? QStringLiteral("room:") : QStringLiteral("device:");
+                    const QString key = prefix + resourceId;
+                    entityKeysByRequestId_.insert(requestId, key);
+                    latestEntityRequestIds_.insert(key, requestId);
+                }
+            }
+        });
     connect(&refreshTimer_, &QTimer::timeout, this, &SessionController::refreshIfNeeded);
     connect(&activeRefreshTimer_, &QTimer::timeout, this, &SessionController::reload);
     refreshTimer_.setInterval(15000);
@@ -370,8 +399,21 @@ QVariantList SessionController::rooms() const
     return result;
 }
 
-void SessionController::onCompleted(const QString& op, quint64, int, const QByteArray& body)
+void SessionController::onCompleted(const QString& op, quint64 requestId, int, const QByteArray& body)
 {
+    if (!isCurrentResponse(op, requestId)) {
+        const QString entityKey = entityKeysByRequestId_.value(requestId);
+        if (op == QLatin1String("device-on")
+            && entityKey == QStringLiteral("device:") + pendingDeviceOnId_) {
+            clearPendingDeviceToggle(false);
+        } else if (op == QLatin1String("device-reading")
+            && entityKey == QStringLiteral("device:") + pendingReadingId_) {
+            pendingReadingId_.clear();
+        }
+        finishTrackedResponse(requestId);
+        return;
+    }
+    finishTrackedResponse(requestId);
     if (op == QLatin1String("geocode")) {
         const std::optional<GeoHit> hit = parseGeocoding(body);
         if (!hit.has_value()) {
@@ -612,8 +654,21 @@ void SessionController::onCompleted(const QString& op, quint64, int, const QByte
     applySession(*session, isRefresh);
 }
 
-void SessionController::onFailed(const QString& op, quint64, int, const QString& message)
+void SessionController::onFailed(const QString& op, quint64 requestId, int, const QString& message)
 {
+    if (!isCurrentResponse(op, requestId)) {
+        const QString entityKey = entityKeysByRequestId_.value(requestId);
+        if (op == QLatin1String("device-on")
+            && entityKey == QStringLiteral("device:") + pendingDeviceOnId_) {
+            clearPendingDeviceToggle(true);
+        } else if (op == QLatin1String("device-reading")
+            && entityKey == QStringLiteral("device:") + pendingReadingId_) {
+            pendingReadingId_.clear();
+        }
+        finishTrackedResponse(requestId);
+        return;
+    }
+    finishTrackedResponse(requestId);
     if (op == QLatin1String("refresh")) {
         refreshInFlight_ = false;
         clearRefreshToken(tokenFilePath_);
@@ -732,6 +787,20 @@ void SessionController::clearLocal()
     pendingDeviceOnId_.clear();
     previousDeviceOn_.reset();
     pendingReadingId_.clear();
+    latestProfileRequestId_ = 0;
+    latestProfileUpdateRequestId_ = 0;
+    latestRoomsRequestId_ = 0;
+    latestWeatherRequestId_ = 0;
+    profileMutationGeneration_ = 0;
+    homeMutationGeneration_ = 0;
+    profileRequestGenerations_.clear();
+    profileRequestsDuringMutation_.clear();
+    pendingProfileMutations_.clear();
+    roomRequestGenerations_.clear();
+    roomRequestsDuringMutation_.clear();
+    pendingHomeMutations_.clear();
+    entityKeysByRequestId_.clear();
+    latestEntityRequestIds_.clear();
     api_.setAccessToken({});
     if (wasSignedIn) {
         emit signedInChanged();
@@ -800,6 +869,7 @@ void SessionController::walkStaleReadings()
 void SessionController::updateWeather()
 {
     if (city_.isEmpty()) {
+        latestWeatherRequestId_ = 0;
         weatherLine_.clear();
         weatherIconFile_.clear();
         emit weatherChanged();
@@ -818,6 +888,54 @@ void SessionController::updatePolling()
     } else {
         activeRefreshTimer_.stop();
     }
+}
+
+bool SessionController::isCurrentResponse(const QString& op, quint64 requestId) const
+{
+    if (requestId == 0) {
+        return true;
+    }
+    if (op == QLatin1String("profile")) {
+        const auto generation = profileRequestGenerations_.constFind(requestId);
+        const auto duringMutation = profileRequestsDuringMutation_.constFind(requestId);
+        return requestId == latestProfileRequestId_
+            && generation != profileRequestGenerations_.cend()
+            && generation.value() == profileMutationGeneration_
+            && duringMutation != profileRequestsDuringMutation_.cend()
+            && !duringMutation.value();
+    }
+    if (op == QLatin1String("profile-update")) {
+        return requestId == latestProfileUpdateRequestId_;
+    }
+    if (op == QLatin1String("rooms")) {
+        const auto generation = roomRequestGenerations_.constFind(requestId);
+        const auto duringMutation = roomRequestsDuringMutation_.constFind(requestId);
+        return requestId == latestRoomsRequestId_
+            && generation != roomRequestGenerations_.cend()
+            && generation.value() == homeMutationGeneration_
+            && duringMutation != roomRequestsDuringMutation_.cend()
+            && !duringMutation.value();
+    }
+    if (op == QLatin1String("geocode") || op == QLatin1String("forecast")) {
+        return requestId == latestWeatherRequestId_;
+    }
+    const auto entityKey = entityKeysByRequestId_.constFind(requestId);
+    return entityKey == entityKeysByRequestId_.cend()
+        || latestEntityRequestIds_.value(entityKey.value()) == requestId;
+}
+
+void SessionController::finishTrackedResponse(quint64 requestId)
+{
+    if (requestId == 0) {
+        return;
+    }
+    roomRequestGenerations_.remove(requestId);
+    roomRequestsDuringMutation_.remove(requestId);
+    profileRequestGenerations_.remove(requestId);
+    profileRequestsDuringMutation_.remove(requestId);
+    pendingProfileMutations_.remove(requestId);
+    pendingHomeMutations_.remove(requestId);
+    entityKeysByRequestId_.remove(requestId);
 }
 
 void SessionController::clearPendingDeviceToggle(bool restore)
