@@ -43,8 +43,8 @@ Decisions and screens use STAR. A Result without a number is incomplete. The API
 
 - Situation: The access token lasts 1 hour and the refresh token rotates.
 - Task: Keep the session without storing the access token on disk.
-- Action: Keep the access token in memory. Refresh is single-flight when expiry is inside 60 seconds, or once after a 401. Transfer timeout is 15 seconds. TLS peer checks stay on.
-- Result: 15-second timeout, 1 refresh in flight, refresh inside a 60-second window. Sign-in lasts until logout because a session timebox is a Pro feature.
+- Action: Keep the access token in memory. Refresh is single-flight when expiry is inside 60 seconds or an authorized request returns 401; retry that request once after refresh. Transport, HTTP 408, 429, and 5xx refresh failures preserve the session and queued request for retry on the 15-second timer. Definitive refresh rejection or a malformed successful response clears the session and pending requests. Transfer timeout is 15 seconds. TLS peer checks stay on.
+- Result: 15-second timeout, 1 refresh in flight, refresh inside a 60-second window, at most 1 retry per authorized request. Sign-in lasts until logout or definitive refresh rejection because a session timebox is a Pro feature.
 
 ### Thermometer
 

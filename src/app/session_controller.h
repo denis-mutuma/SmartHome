@@ -106,6 +106,7 @@ private:
     QString statusMessage_;
     bool signedIn_ = false;
     bool refreshInFlight_ = false;
+    bool refreshRetryPending_ = false;
     QTimer refreshTimer_;
     QTimer activeRefreshTimer_;
     quint64 latestProfileRequestId_ = 0;

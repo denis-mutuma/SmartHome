@@ -649,6 +649,7 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
     if (!session.has_value()) {
         if (isRefresh) {
             refreshInFlight_ = false;
+            api_.cancelPendingRequests();
             clearRefreshToken(tokenFilePath_);
             clearLocal();
         }
@@ -657,11 +658,12 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
     }
     if (isRefresh) {
         refreshInFlight_ = false;
+        refreshRetryPending_ = false;
     }
     applySession(*session, isRefresh);
 }
 
-void SessionController::onFailed(const QString& op, quint64 requestId, int, const QString& message)
+void SessionController::onFailed(const QString& op, quint64 requestId, int status, const QString& message)
 {
     if (!isCurrentResponse(op, requestId)) {
         const QString entityKey = entityKeysByRequestId_.value(requestId);
@@ -678,6 +680,13 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int, cons
     finishTrackedResponse(requestId);
     if (op == QLatin1String("refresh")) {
         refreshInFlight_ = false;
+        if (status == 0 || status == 408 || status == 429 || status >= 500) {
+            refreshRetryPending_ = true;
+            setStatus(message);
+            return;
+        }
+        refreshRetryPending_ = false;
+        api_.cancelPendingRequests();
         clearRefreshToken(tokenFilePath_);
         clearLocal();
         setStatus(message);
@@ -728,8 +737,8 @@ void SessionController::startRefresh()
 
 void SessionController::refreshIfNeeded()
 {
-    if (signedIn_ && accessTokenExpiresAt_.isValid()
-        && QDateTime::currentDateTimeUtc().addSecs(60) >= accessTokenExpiresAt_) {
+    if (signedIn_ && (refreshRetryPending_ || (accessTokenExpiresAt_.isValid()
+        && QDateTime::currentDateTimeUtc().addSecs(60) >= accessTokenExpiresAt_))) {
         startRefresh();
     }
 }
@@ -738,6 +747,7 @@ void SessionController::applySession(const SessionTokens& session, bool isRefres
 {
     if (!saveRefreshToken(session.refreshToken, tokenFilePath_)) {
         if (isRefresh) {
+            api_.cancelPendingRequests();
             clearRefreshToken(tokenFilePath_);
             clearLocal();
         }
@@ -786,6 +796,7 @@ void SessionController::clearLocal()
     refreshToken_.clear();
     accessTokenExpiresAt_ = {};
     refreshInFlight_ = false;
+    refreshRetryPending_ = false;
     email_.clear();
     userId_.clear();
     firstName_.clear();
