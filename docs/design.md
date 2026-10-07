@@ -57,8 +57,8 @@ Decisions and screens use STAR. A Result without a number is incomplete. The API
 
 - Situation: A hidden window should not spend the free egress quota.
 - Task: Keep the open screen current and show weather for one city.
-- Action: Reload on open, after a successful write, and every 20 seconds while `Qt.application.state` is `Qt.ApplicationActive`. Weather uses Open-Meteo from the device.
-- Result: 20-second poll while active, 0 data requests while hidden, 0 Supabase calls for weather, 2 Open-Meteo URLs, 1 city string.
+- Action: Fetch after session establishment, refresh on room entry, apply successful write responses locally, and poll every 20 seconds only while signed in and `Qt.application.state` is `Qt.ApplicationActive`. Inactive state stops future polling but does not cancel requests already in flight. Weather uses Open-Meteo from the device.
+- Result: 20-second poll while signed in and active, 0 new periodic requests while inactive, 0 Supabase calls for weather, 2 Open-Meteo URLs, 1 city string.
 
 ### Email confirmation
 
@@ -81,7 +81,7 @@ Decisions and screens use STAR. A Result without a number is incomplete. The API
 - Situation: The person is signed in.
 - Task: See the home and add the first room.
 - Action: Show the greeting plus `first_name`, the weather line, and the rooms. An empty home shows one Add room action.
-- Result: 0 rooms on a new account. Greeting uses 4 time bands. Rooms use 1 column below 700px and 2 columns at 700px or wider.
+- Result: 0 rooms on a new account. Greeting uses 4 time bands. Rooms are shown in a vertically scrolling list at all widths.
 
 ### Room and device
 
@@ -90,7 +90,7 @@ Decisions and screens use STAR. A Result without a number is incomplete. The API
 - Action: One tap toggles and sends the desired on/off value. A thermometer shows degrees and has no switch. Edit and delete are secondary. Deleting a room deletes its devices.
 - Result: 3 device kinds. 1 tap per toggle. A failed toggle restores the previous value and shows 1 error string.
 
-Colors are `#18171C`, `#2F2F37`, `#536DED`, and `#FFFFFF`. Name text is 32px. Labels are 14px. Secondary text is 11px.
+Colors are `#18171C`, `#2F2F37`, `#536DED`, and `#FFFFFF`. Active screen headings use 32px for the account title, 26px for the greeting, and 22px for room headings; other labels use control defaults.
 
 ## API
 
