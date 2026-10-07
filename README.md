@@ -23,4 +23,6 @@ Build the `appSmartHome_make_apk` target from the Android build directory. The A
 
 ## Checks
 
+`BUILD_TESTING` defaults to `ON`, enabling the five test executables and requiring Qt Test. Configure with `-DBUILD_TESTING=OFF` to build without test targets or the Qt Test dependency; `appSmartHome_qmllint` remains available.
+
 From the desktop build directory, run `ctest` and the `appSmartHome_qmllint` target.
