@@ -102,10 +102,6 @@ qt_add_qml_module(appSmartHome
         src/app/session_controller.cpp
         src/app/session_controller.h
     QML_FILES AccountMain.qml
-    QML_FILES ClickableImage.qml
-    QML_FILES QuickActionButton.qml
-    QML_FILES FrequentlyUsedButton.qml
-    QML_FILES FavouriteRoomsButton.qml
 
     RESOURCES
     README.md

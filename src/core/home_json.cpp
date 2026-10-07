@@ -2,6 +2,7 @@
 
 #include "home_rules.h"
 
+#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -295,36 +296,36 @@ std::optional<ForecastNow> parseForecast(const QByteArray& body)
 QString weatherLabel(int weatherCode)
 {
     switch (weatherCode) {
-    case 0: return QStringLiteral("Clear sky");
-    case 1: return QStringLiteral("Mainly clear");
-    case 2: return QStringLiteral("Partly cloudy");
-    case 3: return QStringLiteral("Overcast");
-    case 45: return QStringLiteral("Fog");
-    case 48: return QStringLiteral("Depositing rime fog");
-    case 51: return QStringLiteral("Light drizzle");
-    case 53: return QStringLiteral("Moderate drizzle");
-    case 55: return QStringLiteral("Dense drizzle");
-    case 56: return QStringLiteral("Light freezing drizzle");
-    case 57: return QStringLiteral("Dense freezing drizzle");
-    case 61: return QStringLiteral("Slight rain");
-    case 63: return QStringLiteral("Moderate rain");
-    case 65: return QStringLiteral("Heavy rain");
-    case 66: return QStringLiteral("Light freezing rain");
-    case 67: return QStringLiteral("Heavy freezing rain");
-    case 71: return QStringLiteral("Slight snowfall");
-    case 73: return QStringLiteral("Moderate snowfall");
-    case 75: return QStringLiteral("Heavy snowfall");
-    case 77: return QStringLiteral("Snow grains");
-    case 80: return QStringLiteral("Slight rain showers");
-    case 81: return QStringLiteral("Moderate rain showers");
-    case 82: return QStringLiteral("Violent rain showers");
-    case 85: return QStringLiteral("Slight snow showers");
-    case 86: return QStringLiteral("Heavy snow showers");
-    case 95: return QStringLiteral("Thunderstorm");
-    case 96: return QStringLiteral("Thunderstorm with slight hail");
-    case 97: return QStringLiteral("Heavy thunderstorm");
-    case 99: return QStringLiteral("Thunderstorm with heavy hail");
-    default: return QStringLiteral("Weather");
+    case 0: return QCoreApplication::translate("WeatherLabel", "Clear sky");
+    case 1: return QCoreApplication::translate("WeatherLabel", "Mainly clear");
+    case 2: return QCoreApplication::translate("WeatherLabel", "Partly cloudy");
+    case 3: return QCoreApplication::translate("WeatherLabel", "Overcast");
+    case 45: return QCoreApplication::translate("WeatherLabel", "Fog");
+    case 48: return QCoreApplication::translate("WeatherLabel", "Depositing rime fog");
+    case 51: return QCoreApplication::translate("WeatherLabel", "Light drizzle");
+    case 53: return QCoreApplication::translate("WeatherLabel", "Moderate drizzle");
+    case 55: return QCoreApplication::translate("WeatherLabel", "Dense drizzle");
+    case 56: return QCoreApplication::translate("WeatherLabel", "Light freezing drizzle");
+    case 57: return QCoreApplication::translate("WeatherLabel", "Dense freezing drizzle");
+    case 61: return QCoreApplication::translate("WeatherLabel", "Slight rain");
+    case 63: return QCoreApplication::translate("WeatherLabel", "Moderate rain");
+    case 65: return QCoreApplication::translate("WeatherLabel", "Heavy rain");
+    case 66: return QCoreApplication::translate("WeatherLabel", "Light freezing rain");
+    case 67: return QCoreApplication::translate("WeatherLabel", "Heavy freezing rain");
+    case 71: return QCoreApplication::translate("WeatherLabel", "Slight snowfall");
+    case 73: return QCoreApplication::translate("WeatherLabel", "Moderate snowfall");
+    case 75: return QCoreApplication::translate("WeatherLabel", "Heavy snowfall");
+    case 77: return QCoreApplication::translate("WeatherLabel", "Snow grains");
+    case 80: return QCoreApplication::translate("WeatherLabel", "Slight rain showers");
+    case 81: return QCoreApplication::translate("WeatherLabel", "Moderate rain showers");
+    case 82: return QCoreApplication::translate("WeatherLabel", "Violent rain showers");
+    case 85: return QCoreApplication::translate("WeatherLabel", "Slight snow showers");
+    case 86: return QCoreApplication::translate("WeatherLabel", "Heavy snow showers");
+    case 95: return QCoreApplication::translate("WeatherLabel", "Thunderstorm");
+    case 96: return QCoreApplication::translate("WeatherLabel", "Thunderstorm with slight hail");
+    case 97: return QCoreApplication::translate("WeatherLabel", "Heavy thunderstorm");
+    case 99: return QCoreApplication::translate("WeatherLabel", "Thunderstorm with heavy hail");
+    default: return QCoreApplication::translate("WeatherLabel", "Weather");
     }
 }
 

@@ -12,8 +12,8 @@ Do not add scenes, schedules, a notification inbox, GPS, a Worker, Clerk, Docker
 
 - C++20 with extensions off. Fix `-Wall -Wextra -Wpedantic` warnings in our files.
 - QML calls the controller. Parsing, token refresh, thermometer math, and HTTP stay in C++.
-- User-visible strings use `qsTr`. Pages use layouts. Controls set `Accessible.name`.
-- Load `SmartHome/Main` with `loadFromModule`. Do not set a custom QML resource prefix.
+- QML strings use `qsTr`; C++ UI strings use `tr()` or `QCoreApplication::translate` for free helpers. Pages use layouts. Controls set `Accessible.name`.
+- Load `SmartHome/Main` with `loadFromModule`; `AccountMain.qml` is aliased to `Main.qml`. Root `Main.qml` and the unreferenced prototype widgets are legacy sources, not part of the active QML module. Do not set a custom QML resource prefix.
 - Name REST columns. Check a UUID before putting it in a URL. Send the desired on/off value.
 - Refresh one at a time when expiry is within 60 seconds or an authorized request returns 401; retry each authorized request once after refresh. Transport, 408, 429, and 5xx refresh failures preserve the session and retry on the 15-second refresh timer. Definitive refresh rejection or a malformed successful response clears the session and pending/queued requests so they cannot replay after another sign-in. Transfer timeout is 15 seconds. Leave TLS verification on.
 - Do not log the access token, refresh token, anon key, or password.
@@ -27,7 +27,7 @@ Branch `smarthome-app`. Do not push. Conventional Commits: `type(scope): subject
 
 - Password 8–72 characters. Names 1–40. City empty or 1–80. Email at most 254.
 - Greeting bands are 05:00–11:59, 12:00–16:59, 17:00–20:59, and 21:00–04:59.
-- Poll every 20 seconds only while `Qt.application.state` is `Qt.ApplicationActive`.
+- Poll every 20 seconds only while signed in and `Qt.application.state` is `Qt.ApplicationActive`.
 - A thermometer write happens when `reading_at` is null or at least 15 minutes old. Keep the value inside 18.0–28.0; thermometer `celsius` is non-null. A new one starts at 22.0.
 - Access token lifetime is the Supabase default of 1 hour. Sign-in lasts until logout. There is no 5-in-15 lockout.
 - Colors are `#18171C`, `#2F2F37`, `#536DED`, and `#FFFFFF`.
