@@ -18,10 +18,11 @@ Do not add scenes, schedules, a notification inbox, GPS, a Worker, Clerk, Docker
 - Refresh one at a time when expiry is within 60 seconds or an authorized request returns 401; retry each authorized request once after refresh. Transport, 408, 429, and 5xx refresh failures preserve the session and retry on the 15-second refresh timer. Definitive refresh rejection or a malformed successful response clears the session and pending/queued requests so they cannot replay after another sign-in. Transfer timeout is 15 seconds. Leave TLS verification on.
 - Do not log the access token, refresh token, anon key, or password.
 - The service role key is never a build variable. URL and anon key come from gitignored `config.local.cmake`.
+- `project(SmartHome VERSION ...)` in CMake is the source of the app, bundle, and Android version. Keep runtime and platform metadata derived from it.
 
 ## Commits
 
-Branch `smarthome-app`. Do not push. Conventional Commits: `type(scope): subject`. Types: `docs`, `feat`, `fix`, `test`, `build`, `chore`. Scopes: `docs`, `sql`, `app`, `qml`. One logical change per commit, usually under 100 lines. A decision body is four STAR lines and the Result has a number.
+Use branches named `<type>/<short-kebab-case-description>`, based on freshly fetched `main`. Make one focused Conventional Commit per PR, with a subject only and no commit body. PRs target `main`; wait for the user to merge before starting the next dependent slice. Never auto-merge. Types: `docs`, `feat`, `fix`, `test`, `build`, `chore`. Scopes: `docs`, `sql`, `app`, `qml`. Keep changes focused, usually under 100 changed lines when practical.
 
 ## Limits
 
@@ -29,7 +30,7 @@ Branch `smarthome-app`. Do not push. Conventional Commits: `type(scope): subject
 - Greeting bands are 05:00–11:59, 12:00–16:59, 17:00–20:59, and 21:00–04:59.
 - Poll every 20 seconds only while signed in and `Qt.application.state` is `Qt.ApplicationActive`.
 - A thermometer write happens when `reading_at` is null or at least 15 minutes old. Keep the value inside 18.0–28.0; thermometer `celsius` is non-null. A new one starts at 22.0.
-- Access token lifetime is the Supabase default of 1 hour. Sign-in lasts until logout. There is no 5-in-15 lockout.
+- Access token lifetime is the Supabase default of 1 hour. Sign-in lasts until logout or definitive refresh rejection. There is no 5-in-15 lockout.
 - Colors are `#18171C`, `#2F2F37`, `#536DED`, and `#FFFFFF`.
 
 ## API

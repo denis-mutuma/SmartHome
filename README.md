@@ -13,6 +13,12 @@ Read `AGENTS.md` and `docs/design.md` before changing the app.
 
 `config.local.cmake` stays off git. The service role key stays out of the build.
 
+## Build the Android app
+
+Install the Qt 6.11.2 Android arm64 kit and configure its matching Android SDK and NDK in Qt Creator. Use the same Supabase configuration described above.
+
+Build the `appSmartHome_make_apk` target from the Android build directory. The APK is written under `android-build-appSmartHome/build/outputs/apk/` and uses package ID `org.mutuma.smarthome`. `apk_all` also packages the Android Qt Test APKs. CMake project version `1.0.0` supplies the runtime, bundle, Android version name, and derived version code.
+
 ## Checks
 
 From the desktop build directory, run `ctest` and the `appSmartHome_qmllint` target.

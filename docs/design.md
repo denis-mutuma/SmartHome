@@ -51,13 +51,13 @@ Decisions and screens use STAR. A Result without a number is incomplete. The API
 - Situation: Supabase does not simulate a sensor.
 - Task: Show a temperature that changes without a cron job.
 - Action: The client writes a new value when `reading_at` is null or at least 15 minutes old, clamped to 18.0–28.0. A thermometer's Celsius value is non-null; a new thermometer starts at 22.0.
-- Result: 0 Edge Function calls. An idle account writes 0 thermometer rows. The value stays inside an 10-degree span.
+- Result: 0 Edge Function calls. An inactive app writes 0 thermometer rows; active polling may refresh stale readings. The value stays inside a 10-degree span.
 
 ### Poll and weather
 
 - Situation: A hidden window should not spend the free egress quota.
 - Task: Keep the open screen current and show weather for one city.
-- Action: Fetch after session establishment, refresh on room entry, apply successful write responses locally, and poll every 20 seconds only while signed in and `Qt.application.state` is `Qt.ApplicationActive`. Inactive state stops future polling but does not cancel requests already in flight. Weather uses Open-Meteo from the device.
+- Action: Fetch profile and rooms after session establishment, refresh on room entry, and apply successful write responses locally. Poll every 20 seconds only while signed in and `Qt.application.state` is `Qt.ApplicationActive`. Inactive state stops future polling but does not cancel requests already in flight. Weather uses Open-Meteo from the device.
 - Result: 20-second poll while signed in and active, 0 new periodic requests while inactive, 0 Supabase calls for weather, 2 Open-Meteo URLs, 1 city string.
 
 ### Email confirmation
@@ -81,7 +81,7 @@ Decisions and screens use STAR. A Result without a number is incomplete. The API
 - Situation: The person is signed in.
 - Task: See the home and add the first room.
 - Action: Show the greeting plus `first_name`, the weather line, and the rooms. An empty home shows one Add room action.
-- Result: 0 rooms on a new account. Greeting uses 4 time bands. Rooms are shown in a vertically scrolling list at all widths.
+- Result: 0 rooms on a new account. Greeting uses 4 time bands. Rooms use a vertically scrolling list at all widths. Active headings are 32px (account title), 26px (greeting), and 22px (room headings); other labels use control defaults.
 
 ### Room and device
 
@@ -90,7 +90,7 @@ Decisions and screens use STAR. A Result without a number is incomplete. The API
 - Action: One tap toggles and sends the desired on/off value. A thermometer shows degrees and has no switch. Edit and delete are secondary. Deleting a room deletes its devices.
 - Result: 3 device kinds. 1 tap per toggle. A failed toggle restores the previous value and shows 1 error string.
 
-Colors are `#18171C`, `#2F2F37`, `#536DED`, and `#FFFFFF`. Active screen headings use 32px for the account title, 26px for the greeting, and 22px for room headings; other labels use control defaults.
+Colors are `#18171C`, `#2F2F37`, `#536DED`, and `#FFFFFF`.
 
 ## API
 
