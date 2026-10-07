@@ -13,6 +13,7 @@
 #include <QTest>
 
 #include <memory>
+#include <utility>
 
 namespace {
 
@@ -26,6 +27,11 @@ struct DeferredResponse
 
 struct AuthServerState
 {
+    explicit AuthServerState(QByteArray body)
+        : sessionBody(std::move(body))
+    {
+    }
+
     QByteArray sessionBody;
     QByteArray refreshBody;
     QByteArray loginRequest;

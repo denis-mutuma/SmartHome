@@ -22,6 +22,25 @@ if(NOT DEFINED SMARTHOME_SUPABASE_ANON_KEY)
     set(SMARTHOME_SUPABASE_ANON_KEY "")
 endif()
 
+if(MSVC)
+    set(_smarthome_warning_options /W4)
+else()
+    set(_smarthome_warning_options -Wall -Wextra -Wpedantic)
+endif()
+set_property(SOURCE
+    main.cpp
+    src/core/home_rules.cpp
+    src/core/home_json.cpp
+    src/app/api_client.cpp
+    src/app/token_store.cpp
+    src/app/session_controller.cpp
+    tests/tst_home_rules.cpp
+    tests/tst_home_json.cpp
+    tests/tst_token_store.cpp
+    tests/tst_api_client.cpp
+    tests/tst_session_controller.cpp
+    APPEND PROPERTY COMPILE_OPTIONS ${_smarthome_warning_options})
+
 qt_add_library(smarthome_core STATIC
     src/core/home_rules.cpp
     src/core/home_json.cpp
@@ -33,11 +52,6 @@ if(WIN32)
     target_link_libraries(smarthome_core PUBLIC crypt32)
 endif()
 target_link_libraries(smarthome_core PUBLIC Qt6::Core Qt6::Network)
-if(MSVC)
-    target_compile_options(smarthome_core PRIVATE /W4)
-else()
-    target_compile_options(smarthome_core PRIVATE -Wall -Wextra -Wpedantic)
-endif()
 
 if(BUILD_TESTING)
     find_package(Qt6 6.11 REQUIRED COMPONENTS Test)
