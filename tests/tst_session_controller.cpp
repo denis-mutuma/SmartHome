@@ -1056,6 +1056,7 @@ void SessionControllerTest::loadsWeatherForProfileCity()
     AuthServerState state{sessionResponse()};
     state.profileBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":"Nairobi"}])");
+    state.deferGeocodingResponses = true;
     startAuthServer(server, state);
 
     const QString baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
@@ -1065,7 +1066,17 @@ void SessionControllerTest::loadsWeatherForProfileCity()
     SessionController controller(baseUrl, QStringLiteral("public-anon-key"),
         directory.filePath(QStringLiteral("refresh-token.bin")), weatherEndpoints);
     QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.geocodingRequests, 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingGeocodingResponses.size(), 1, 5000);
+    controller.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.roomsRequests, 2, 5000);
+    QCOMPARE(state.geocodingRequests, 1);
+
+    writeResponse(state.pendingGeocodingResponses.takeFirst());
+    QTRY_COMPARE_WITH_TIMEOUT(state.forecastRequests, 1, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(controller.weatherLine(), QStringLiteral("Partly cloudy · 20.9 °C"), 5000);
+    state.deferGeocodingResponses = false;
 
     QVERIFY(state.geocodingRequest.contains(QByteArrayLiteral("name=Nairobi")));
     QVERIFY(state.forecastRequest.contains(QByteArrayLiteral("latitude=-1.290000")));
@@ -1076,6 +1087,7 @@ void SessionControllerTest::loadsWeatherForProfileCity()
 
     state.updatedProfileBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174000","first_name":"Amina","city":"Mombasa"}])");
+    state.profileBody = state.updatedProfileBody;
     state.geocodingBody = geocodingResponse(QStringLiteral("Mombasa"), -4.05, 39.67);
     state.forecastBody = forecastResponse(25.0);
     QVERIFY(controller.saveSettings(QStringLiteral("Amina"), QStringLiteral("Mombasa")));
@@ -1085,6 +1097,12 @@ void SessionControllerTest::loadsWeatherForProfileCity()
     QVERIFY(state.geocodingRequest.contains(QByteArrayLiteral("name=Mombasa")));
     QVERIFY(state.forecastRequest.contains(QByteArrayLiteral("latitude=-4.050000")));
     QVERIFY(state.forecastRequest.contains(QByteArrayLiteral("longitude=39.670000")));
+
+    state.forecastBody = forecastResponse(24.0);
+    controller.reload();
+    QTRY_COMPARE_WITH_TIMEOUT(state.forecastRequests, 3, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(controller.weatherLine().contains(QStringLiteral("24.0 °C")), 5000);
+    QCOMPARE(state.geocodingRequests, 2);
 }
 
 void SessionControllerTest::pollingFollowsSignInAndApplicationState()

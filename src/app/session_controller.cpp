@@ -435,11 +435,14 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
     if (op == QLatin1String("geocode")) {
         const std::optional<GeoHit> hit = parseGeocoding(body);
         if (!hit.has_value()) {
+            pendingGeocodingCity_.clear();
             weatherLine_ = tr("Couldn't find that city.");
             weatherIconFile_.clear();
             emit weatherChanged();
             return;
         }
+        weatherLocation_ = *hit;
+        weatherLocationCity_ = std::exchange(pendingGeocodingCity_, QString());
         api_.forecast(hit->latitude, hit->longitude);
         return;
     }
@@ -735,6 +738,9 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
         pendingReadingId_.clear();
         setStatus(message);
     } else if (op == QLatin1String("geocode")) {
+        pendingGeocodingCity_.clear();
+        weatherLocationCity_.clear();
+        weatherLocation_.reset();
         weatherLine_ = tr("Couldn't find that city.");
         weatherIconFile_.clear();
         emit weatherChanged();
@@ -843,6 +849,9 @@ void SessionController::clearLocal()
     weatherLine_.clear();
     weatherIconFile_.clear();
     roomRows_.clear();
+    weatherLocationCity_.clear();
+    pendingGeocodingCity_.clear();
+    weatherLocation_.reset();
     pendingDeviceOnId_.clear();
     previousDeviceOn_.reset();
     pendingReadingId_.clear();
@@ -935,11 +944,24 @@ void SessionController::updateWeather()
 {
     if (city_.isEmpty()) {
         latestWeatherRequestId_ = 0;
+        weatherLocationCity_.clear();
+        pendingGeocodingCity_.clear();
+        weatherLocation_.reset();
         weatherLine_.clear();
         weatherIconFile_.clear();
         emit weatherChanged();
         return;
     }
+    if (weatherLocation_.has_value() && weatherLocationCity_ == city_) {
+        api_.forecast(weatherLocation_->latitude, weatherLocation_->longitude);
+        return;
+    }
+    if (pendingGeocodingCity_ == city_) {
+        return;
+    }
+    weatherLocationCity_.clear();
+    weatherLocation_.reset();
+    pendingGeocodingCity_ = city_;
     api_.geocode(city_);
 }
 
