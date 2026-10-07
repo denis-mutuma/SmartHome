@@ -76,9 +76,15 @@ struct AuthServerState
     QByteArray forecastBody = QByteArrayLiteral(
         R"({"current":{"temperature_2m":20.9,"weather_code":2,"is_day":1}})");
     bool failDeviceToggle = false;
+    bool failRoomInsert = false;
+    bool failDeviceInsert = false;
+    bool deferRoomInsertResponses = false;
+    bool deferDeviceInsertResponses = false;
     int refreshRequests = 0;
     int refreshStatus = 200;
     int profileUnauthorizedResponses = 0;
+    QList<DeferredResponse> pendingRoomInsertResponses;
+    QList<DeferredResponse> pendingDeviceInsertResponses;
 };
 
 void writeResponse(const DeferredResponse& response)
@@ -165,9 +171,18 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 }
             } else if (requestLine.startsWith(QByteArrayLiteral("POST /rest/v1/rooms?select="))) {
                 state.roomInsertRequest = *request;
-                status = 201;
-                reason = QByteArrayLiteral("Created");
-                payload = state.insertedRoomBody;
+                if (state.failRoomInsert) {
+                    status = 500;
+                    reason = QByteArrayLiteral("Internal Server Error");
+                    payload = QByteArrayLiteral(R"({"message":"room insert rejected"})");
+                } else {
+                    status = 201;
+                    reason = QByteArrayLiteral("Created");
+                    payload = state.insertedRoomBody;
+                }
+                if (state.deferRoomInsertResponses) {
+                    deferredResponses = &state.pendingRoomInsertResponses;
+                }
             } else if (requestLine.startsWith(QByteArrayLiteral("PATCH /rest/v1/rooms?id=eq."))) {
                 state.roomUpdateRequest = *request;
                 payload = state.updatedRoomBody;
@@ -176,9 +191,18 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 payload = QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174010"}])");
             } else if (requestLine.startsWith(QByteArrayLiteral("POST /rest/v1/devices?select="))) {
                 state.deviceInsertRequest = *request;
-                status = 201;
-                reason = QByteArrayLiteral("Created");
-                payload = state.insertedDeviceBody;
+                if (state.failDeviceInsert) {
+                    status = 500;
+                    reason = QByteArrayLiteral("Internal Server Error");
+                    payload = QByteArrayLiteral(R"({"message":"device insert rejected"})");
+                } else {
+                    status = 201;
+                    reason = QByteArrayLiteral("Created");
+                    payload = state.insertedDeviceBody;
+                }
+                if (state.deferDeviceInsertResponses) {
+                    deferredResponses = &state.pendingDeviceInsertResponses;
+                }
             } else if (requestLine.startsWith(QByteArrayLiteral("PATCH /rest/v1/devices?id=eq."))) {
                 const QJsonObject patch = QJsonDocument::fromJson(
                     request->mid(headerEnd + 4)).object();
@@ -334,6 +358,8 @@ private slots:
     void loadsAndSavesProfileSettings();
     void loadsAndCreatesRooms();
     void createsDeviceInExistingRoom();
+    void createSignalsOnlyOnSuccess();
+    void signOutFailsPendingCreates();
     void togglesDeviceAndRollsBackOnFailure();
     void renamesAndDeletesDevice();
     void renamesAndDeletesRoom();
@@ -718,6 +744,89 @@ void SessionControllerTest::createsDeviceInExistingRoom()
     QCOMPARE(body.value(QStringLiteral("is_on")).toBool(), false);
 }
 
+void SessionControllerTest::createSignalsOnlyOnSuccess()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.roomsBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[]}])");
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QSignalSpy roomCreated(&controller, &SessionController::roomCreated);
+    QSignalSpy roomCreateFailed(&controller, &SessionController::roomCreateFailed);
+    QSignalSpy deviceCreated(&controller, &SessionController::deviceCreated);
+    QSignalSpy deviceCreateFailed(&controller, &SessionController::deviceCreateFailed);
+    QVERIFY(roomCreated.isValid());
+    QVERIFY(roomCreateFailed.isValid());
+    QVERIFY(deviceCreated.isValid());
+    QVERIFY(deviceCreateFailed.isValid());
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+
+    state.failRoomInsert = true;
+    QVERIFY(controller.createRoom(QStringLiteral("Office")));
+    QTRY_VERIFY_WITH_TIMEOUT(!controller.statusMessage().isEmpty(), 5000);
+    QCOMPARE(roomCreated.count(), 0);
+    QTRY_COMPARE_WITH_TIMEOUT(roomCreateFailed.count(), 1, 5000);
+    QCOMPARE(roomCreateFailed.first().first().toString(), QStringLiteral("Office"));
+    state.failRoomInsert = false;
+    QVERIFY(controller.createRoom(QStringLiteral("Office")));
+    QTRY_COMPARE_WITH_TIMEOUT(roomCreated.count(), 1, 5000);
+    QCOMPARE(roomCreated.first().first().toString(), QStringLiteral("Office"));
+
+    const QString roomId = QStringLiteral("123e4567-e89b-12d3-a456-426614174010");
+    state.failDeviceInsert = true;
+    QVERIFY(controller.createDevice(roomId, QStringLiteral("Desk light"), QStringLiteral("light")));
+    QTRY_VERIFY_WITH_TIMEOUT(!controller.statusMessage().isEmpty(), 5000);
+    QCOMPARE(deviceCreated.count(), 0);
+    QTRY_COMPARE_WITH_TIMEOUT(deviceCreateFailed.count(), 1, 5000);
+    QCOMPARE(deviceCreateFailed.first().at(0).toString(), roomId);
+    QCOMPARE(deviceCreateFailed.first().at(1).toString(), QStringLiteral("Desk light"));
+    state.failDeviceInsert = false;
+    QVERIFY(controller.createDevice(roomId, QStringLiteral("Desk light"), QStringLiteral("light")));
+    QTRY_COMPARE_WITH_TIMEOUT(deviceCreated.count(), 1, 5000);
+    QCOMPARE(deviceCreated.first().at(0).toString(), roomId);
+    QCOMPARE(deviceCreated.first().at(1).toString(), QStringLiteral("Desk light"));
+}
+
+void SessionControllerTest::signOutFailsPendingCreates()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.roomsBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[]}])");
+    state.deferRoomInsertResponses = true;
+    state.deferDeviceInsertResponses = true;
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QSignalSpy roomCreateFailed(&controller, &SessionController::roomCreateFailed);
+    QSignalSpy deviceCreateFailed(&controller, &SessionController::deviceCreateFailed);
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+    const QString roomId = QStringLiteral("123e4567-e89b-12d3-a456-426614174010");
+    QVERIFY(controller.createRoom(QStringLiteral("Office")));
+    QVERIFY(controller.createDevice(roomId, QStringLiteral("Desk light"), QStringLiteral("light")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingRoomInsertResponses.size(), 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceInsertResponses.size(), 1, 5000);
+
+    controller.signOut();
+    QCOMPARE(roomCreateFailed.count(), 1);
+    QCOMPARE(roomCreateFailed.first().first().toString(), QStringLiteral("Office"));
+    QCOMPARE(deviceCreateFailed.count(), 1);
+    QCOMPARE(deviceCreateFailed.first().at(0).toString(), roomId);
+    QCOMPARE(deviceCreateFailed.first().at(1).toString(), QStringLiteral("Desk light"));
+}
+
 void SessionControllerTest::togglesDeviceAndRollsBackOnFailure()
 {
     QTemporaryDir directory;
@@ -957,29 +1066,35 @@ void SessionControllerTest::pollingFollowsSignInAndApplicationState()
     QCOMPARE(SessionController::ActiveRefreshIntervalMs, 20000);
     SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
         QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")),
-        ApiClient::WeatherEndpoints{}, 80);
+        ApiClient::WeatherEndpoints{}, 250);
     QVERIFY(setPollingState(controller, Qt::ApplicationActive));
-    QTest::qWait(200);
+    QTest::qWait(300);
     QCOMPARE(state.profileRequests, 0);
     QCOMPARE(state.roomsRequests, 0);
 
     QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
     QTRY_COMPARE_WITH_TIMEOUT(state.profileRequests, 1, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(state.roomsRequests, 1, 5000);
+    QSignalSpy profileChanged(&controller, &SessionController::profileChanged);
+    QSignalSpy roomsChanged(&controller, &SessionController::roomsChanged);
+    QVERIFY(profileChanged.isValid());
+    QVERIFY(roomsChanged.isValid());
     QVERIFY(setPollingState(controller, Qt::ApplicationInactive));
     const int inactiveProfileRequests = state.profileRequests;
     const int inactiveRoomsRequests = state.roomsRequests;
-    QTest::qWait(240);
+    QTest::qWait(350);
     QCOMPARE(state.profileRequests, inactiveProfileRequests);
     QCOMPARE(state.roomsRequests, inactiveRoomsRequests);
 
     QVERIFY(setPollingState(controller, Qt::ApplicationActive));
     QTRY_VERIFY_WITH_TIMEOUT(state.profileRequests > inactiveProfileRequests, 2000);
     QTRY_VERIFY_WITH_TIMEOUT(state.roomsRequests > inactiveRoomsRequests, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(profileChanged.count() > 0, 2000);
+    QTRY_VERIFY_WITH_TIMEOUT(roomsChanged.count() > 0, 2000);
     controller.signOut();
     const int signedOutProfileRequests = state.profileRequests;
     const int signedOutRoomsRequests = state.roomsRequests;
-    QTest::qWait(240);
+    QTest::qWait(350);
     QCOMPARE(state.profileRequests, signedOutProfileRequests);
     QCOMPARE(state.roomsRequests, signedOutRoomsRequests);
 }
