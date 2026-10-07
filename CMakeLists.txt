@@ -106,26 +106,10 @@ qt_add_qml_module(appSmartHome
     QML_FILES AccountMain.qml
 
     RESOURCES
-    README.md
-    "assets/icons/settings.svg"
     "assets/icons/sun-cloud.svg"
-    "assets/icons/light-on.svg"
-    "assets/icons/light-off.svg"
-    "assets/icons/toggle-on.svg"
-    "assets/icons/toggle-off.svg"
     "assets/icons/white-moon.svg"
-    "assets/icons/grey-moon.svg"
     "assets/icons/yellow-sun.svg"
-    "assets/icons/white-sun.svg"
-    "assets/icons/green-home.svg"
-    "assets/icons/white-home.svg"
-
-    "assets/images/bedroom.jpeg"
-    "assets/images/kitchen.jpeg"
-    "assets/images/garage.jpg"
-    "assets/images/living-room.jpeg"
     "assets/images/mutuma.jpg"
-
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
