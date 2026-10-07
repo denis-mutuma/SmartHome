@@ -769,8 +769,12 @@ void SessionController::startRefresh()
 
 void SessionController::refreshIfNeeded()
 {
-    if (signedIn_ && (refreshRetryPending_ || (accessTokenExpiresAt_.isValid()
-        && QDateTime::currentDateTimeUtc().addSecs(60) >= accessTokenExpiresAt_))) {
+    if (refreshRetryPending_ && !refreshToken_.isEmpty()) {
+        startRefresh();
+        return;
+    }
+    if (signedIn_ && accessTokenExpiresAt_.isValid()
+        && QDateTime::currentDateTimeUtc().addSecs(60) >= accessTokenExpiresAt_) {
         startRefresh();
     }
 }

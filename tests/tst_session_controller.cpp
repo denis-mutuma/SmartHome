@@ -350,6 +350,7 @@ private slots:
     void registerSendsNormalizedAccountDetails();
     void rejectsInvalidCredentials();
     void restoresSessionWithRotatedRefreshToken();
+    void retriesStoredSessionAfterTransientRefreshFailure();
     void clearsRejectedStoredSession();
     void transientRefreshFailurePreservesSession();
     void rejectedRefreshDiscardsQueuedRequests();
@@ -469,6 +470,38 @@ void SessionControllerTest::restoresSessionWithRotatedRefreshToken()
     QCOMPARE(state.refreshRequests, 1);
     QCOMPARE(requestBody(state.refreshRequest).value(QStringLiteral("refresh_token")).toString(),
         QStringLiteral("old-refresh-token"));
+}
+
+void SessionControllerTest::retriesStoredSessionAfterTransientRefreshFailure()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString tokenPath = directory.filePath(QStringLiteral("refresh-token.bin"));
+    QVERIFY(saveRefreshToken(QStringLiteral("old-refresh-token"), tokenPath));
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.refreshStatus = 500;
+    state.refreshBody = sessionResponse(QStringLiteral("new-access-token"),
+        QStringLiteral("rotated-refresh-token"));
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), tokenPath);
+    QSignalSpy statusChanged(&controller, &SessionController::statusChanged);
+    QVERIFY(statusChanged.isValid());
+    QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 1, 5000);
+    QTRY_VERIFY_WITH_TIMEOUT(statusChanged.count() > 0, 5000);
+    QVERIFY(!controller.signedIn());
+    QCOMPARE(loadRefreshToken(tokenPath), QStringLiteral("old-refresh-token"));
+
+    state.refreshStatus = 200;
+    QVERIFY(QMetaObject::invokeMethod(&controller, "refreshIfNeeded", Qt::DirectConnection));
+    QTRY_VERIFY_WITH_TIMEOUT(controller.signedIn(), 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.refreshRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(loadRefreshToken(tokenPath), QStringLiteral("rotated-refresh-token"), 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.firstName(), QStringLiteral("Amina"), 5000);
 }
 
 void SessionControllerTest::clearsRejectedStoredSession()
