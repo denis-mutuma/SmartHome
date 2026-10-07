@@ -96,14 +96,13 @@ qt_add_executable(appSmartHome
     main.cpp
 )
 
-set_source_files_properties(AccountMain.qml PROPERTIES QT_RESOURCE_ALIAS Main.qml)
 qt_add_qml_module(appSmartHome
     URI SmartHome
     VERSION 1.0
     SOURCES
         src/app/session_controller.cpp
         src/app/session_controller.h
-    QML_FILES AccountMain.qml
+    QML_FILES Main.qml
 
     RESOURCES
     "assets/icons/sun-cloud.svg"

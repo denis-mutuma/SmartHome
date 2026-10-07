@@ -15,7 +15,7 @@
 - Keep network, parsing, credentials and state transitions in C++; keep QML declarative, translated and accessible.
 - Use responsive QML layouts, `qsTr`/`tr` for UI strings and `Accessible.name` on controls.
 - Preserve C++20 without extensions and project-derived version metadata unless the change explicitly revises them.
-- Preserve `loadFromModule("SmartHome", "Main")`; [AccountMain.qml](AccountMain.qml) is the active module entrypoint.
+- Preserve `loadFromModule("SmartHome", "Main")`; [Main.qml](Main.qml) is the active module entrypoint.
 - Simplify by removing unused behavior and duplication, not by deleting validation or race-condition coverage.
 - Send explicit desired actions; distinguish request acceptance from reported state and physical confirmation.
 - Never present client-generated values as real telemetry; preserve source, units, observation time and unknown/stale states in the real-device path.
