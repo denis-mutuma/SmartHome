@@ -75,19 +75,8 @@ if(WIN32)
     cmake_path(GET _qt_cmake_dir PARENT_PATH _qt_lib_dir)
     cmake_path(GET _qt_lib_dir PARENT_PATH _qt_prefix)
     cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH _cxx_bin)
-    set_property(TEST home_rules PROPERTY ENVIRONMENT_MODIFICATION
-        "PATH=path_list_prepend:${_qt_prefix}/bin"
-        "PATH=path_list_prepend:${_cxx_bin}")
-    set_property(TEST home_json PROPERTY ENVIRONMENT_MODIFICATION
-        "PATH=path_list_prepend:${_qt_prefix}/bin"
-        "PATH=path_list_prepend:${_cxx_bin}")
-    set_property(TEST token_store PROPERTY ENVIRONMENT_MODIFICATION
-        "PATH=path_list_prepend:${_qt_prefix}/bin"
-        "PATH=path_list_prepend:${_cxx_bin}")
-    set_property(TEST api_client PROPERTY ENVIRONMENT_MODIFICATION
-        "PATH=path_list_prepend:${_qt_prefix}/bin"
-        "PATH=path_list_prepend:${_cxx_bin}")
-    set_property(TEST session_controller PROPERTY ENVIRONMENT_MODIFICATION
+    set_property(TEST home_rules home_json token_store api_client session_controller
+        PROPERTY ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:${_qt_prefix}/bin"
         "PATH=path_list_prepend:${_cxx_bin}")
 endif()
