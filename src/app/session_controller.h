@@ -133,4 +133,5 @@ private:
     QSet<quint64> pendingHomeMutations_;
     QHash<quint64, QString> entityKeysByRequestId_;
     QHash<QString, quint64> latestEntityRequestIds_;
+    QSet<QString> pendingEntityMutations_;
 };

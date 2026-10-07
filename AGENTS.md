@@ -15,6 +15,7 @@ Do not add scenes, schedules, a notification inbox, GPS, a Worker, Clerk, Docker
 - QML strings use `qsTr`; C++ UI strings use `tr()` or `QCoreApplication::translate` for free helpers. Pages use layouts. Controls set `Accessible.name`.
 - Load `SmartHome/Main` with `loadFromModule`; `AccountMain.qml` is aliased to `Main.qml`. Root `Main.qml` and the unreferenced prototype widgets are legacy sources, not part of the active QML module. Do not set a custom QML resource prefix.
 - Name REST columns. Check a UUID before putting it in a URL. Send the desired on/off value.
+- Serialize writes to the same profile, room, or device until the current request completes; independent resources may be updated separately.
 - Refresh one at a time when expiry is within 60 seconds or an authorized request returns 401; retry each authorized request once after refresh. Transport, 408, 429, and 5xx refresh failures preserve the session and retry on the 15-second refresh timer. Definitive refresh rejection or a malformed successful response clears the session and pending/queued requests so they cannot replay after another sign-in. Transfer timeout is 15 seconds. Leave TLS verification on.
 - Do not log the access token, refresh token, anon key, or password.
 - The service role key is never a build variable. URL and anon key come from gitignored `config.local.cmake`.
