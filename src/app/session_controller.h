@@ -89,7 +89,7 @@ private:
     void updateWeather();
     int nextRoomPosition() const;
     int nextDevicePosition(const QString& roomId) const;
-    void clearPendingDeviceToggle(bool restore);
+    void clearPendingDeviceToggle(const QString& deviceId, bool restore);
     void setStatus(const QString& message);
 
     ApiClient api_;
@@ -107,12 +107,11 @@ private:
     QString pendingGeocodingCity_;
     std::optional<GeoHit> weatherLocation_;
     QList<RoomRow> roomRows_;
-    QString pendingDeviceOnId_;
+    QHash<QString, bool> pendingDeviceOnStates_;
     QString pendingReadingId_;
     QString pendingRoomCreateName_;
     QString pendingDeviceCreateRoomId_;
     QString pendingDeviceCreateName_;
-    std::optional<bool> previousDeviceOn_;
     QString statusMessage_;
     bool signedIn_ = false;
     bool refreshInFlight_ = false;

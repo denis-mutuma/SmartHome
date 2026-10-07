@@ -322,10 +322,6 @@ bool SessionController::setDeviceOn(const QString& deviceId, bool on)
         setStatus(tr("Sign in to manage your home."));
         return false;
     }
-    if (!pendingDeviceOnId_.isEmpty()) {
-        setStatus(tr("Wait for the current device update to finish."));
-        return false;
-    }
     if (!isUuid(deviceId)) {
         setStatus(tr("Choose an existing switchable device."));
         return false;
@@ -346,8 +342,7 @@ bool SessionController::setDeviceOn(const QString& deviceId, bool on)
             if (*device.isOn == on) {
                 return true;
             }
-            pendingDeviceOnId_ = device.id;
-            previousDeviceOn_ = device.isOn;
+            pendingDeviceOnStates_.insert(device.id, *device.isOn);
             device.isOn = on;
             emit roomsChanged();
             setStatus({});
@@ -450,11 +445,10 @@ QVariantList SessionController::rooms() const
 
 void SessionController::onCompleted(const QString& op, quint64 requestId, int, const QByteArray& body)
 {
+    const QString entityKey = entityKeysByRequestId_.value(requestId);
     if (!isCurrentResponse(op, requestId)) {
-        const QString entityKey = entityKeysByRequestId_.value(requestId);
-        if (op == QLatin1String("device-on")
-            && entityKey == QStringLiteral("device:") + pendingDeviceOnId_) {
-            clearPendingDeviceToggle(false);
+        if (op == QLatin1String("device-on") && entityKey.startsWith(QStringLiteral("device:"))) {
+            clearPendingDeviceToggle(entityKey.mid(QStringLiteral("device:").size()), false);
         } else if (op == QLatin1String("device-reading")
             && entityKey == QStringLiteral("device:") + pendingReadingId_) {
             pendingReadingId_.clear();
@@ -635,10 +629,14 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
         return;
     }
     if (op == QLatin1String("device-on")) {
+        const QString requestedDeviceId = entityKey.startsWith(QStringLiteral("device:"))
+            ? entityKey.mid(QStringLiteral("device:").size()) : QString();
         const std::optional<QList<DeviceRow>> devices = parseDevices(body);
         if (!devices.has_value() || devices->size() != 1
-            || devices->first().id != pendingDeviceOnId_ || !devices->first().isOn.has_value()) {
-            clearPendingDeviceToggle(true);
+            || requestedDeviceId.isEmpty() || devices->first().id != requestedDeviceId
+            || !devices->first().isOn.has_value()
+            || !pendingDeviceOnStates_.contains(requestedDeviceId)) {
+            clearPendingDeviceToggle(requestedDeviceId, true);
             setStatus(tr("Couldn't update the device."));
             return;
         }
@@ -647,14 +645,14 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
             for (DeviceRow& device : room.devices) {
                 if (device.id == updated.id) {
                     device = updated;
-                    clearPendingDeviceToggle(false);
+                    clearPendingDeviceToggle(updated.id, false);
                     emit roomsChanged();
                     setStatus({});
                     return;
                 }
             }
         }
-        clearPendingDeviceToggle(true);
+        clearPendingDeviceToggle(requestedDeviceId, true);
         setStatus(tr("Couldn't update the device."));
         return;
     }
@@ -723,11 +721,10 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
 
 void SessionController::onFailed(const QString& op, quint64 requestId, int status, const QString& message)
 {
+    const QString entityKey = entityKeysByRequestId_.value(requestId);
     if (!isCurrentResponse(op, requestId)) {
-        const QString entityKey = entityKeysByRequestId_.value(requestId);
-        if (op == QLatin1String("device-on")
-            && entityKey == QStringLiteral("device:") + pendingDeviceOnId_) {
-            clearPendingDeviceToggle(true);
+        if (op == QLatin1String("device-on") && entityKey.startsWith(QStringLiteral("device:"))) {
+            clearPendingDeviceToggle(entityKey.mid(QStringLiteral("device:").size()), true);
         } else if (op == QLatin1String("device-reading")
             && entityKey == QStringLiteral("device:") + pendingReadingId_) {
             pendingReadingId_.clear();
@@ -763,7 +760,14 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
         || op == QLatin1String("room-delete")) {
         setStatus(message);
     } else if (op == QLatin1String("device-on")) {
-        clearPendingDeviceToggle(true);
+        if (entityKey.startsWith(QStringLiteral("device:"))) {
+            clearPendingDeviceToggle(entityKey.mid(QStringLiteral("device:").size()), true);
+        } else {
+            const QStringList pendingIds = pendingDeviceOnStates_.keys();
+            for (const QString& pendingId : pendingIds) {
+                clearPendingDeviceToggle(pendingId, true);
+            }
+        }
         setStatus(message);
     } else if (op == QLatin1String("device-reading")) {
         pendingReadingId_.clear();
@@ -883,8 +887,7 @@ void SessionController::clearLocal()
     weatherLocationCity_.clear();
     pendingGeocodingCity_.clear();
     weatherLocation_.reset();
-    pendingDeviceOnId_.clear();
-    previousDeviceOn_.reset();
+    pendingDeviceOnStates_.clear();
     pendingReadingId_.clear();
     latestProfileRequestId_ = 0;
     latestProfileUpdateRequestId_ = 0;
@@ -1059,23 +1062,23 @@ void SessionController::finishTrackedResponse(quint64 requestId)
     }
 }
 
-void SessionController::clearPendingDeviceToggle(bool restore)
+void SessionController::clearPendingDeviceToggle(const QString& deviceId, bool restore)
 {
-    if (pendingDeviceOnId_.isEmpty()) {
+    const auto previousOn = pendingDeviceOnStates_.constFind(deviceId);
+    if (previousOn == pendingDeviceOnStates_.cend()) {
         return;
     }
-    if (restore && previousDeviceOn_.has_value()) {
+    if (restore) {
         for (RoomRow& room : roomRows_) {
             for (DeviceRow& device : room.devices) {
-                if (device.id == pendingDeviceOnId_) {
-                    device.isOn = previousDeviceOn_;
+                if (device.id == deviceId) {
+                    device.isOn = previousOn.value();
                 }
             }
         }
         emit roomsChanged();
     }
-    pendingDeviceOnId_.clear();
-    previousDeviceOn_.reset();
+    pendingDeviceOnStates_.remove(deviceId);
 }
 
 void SessionController::setStatus(const QString& message)
