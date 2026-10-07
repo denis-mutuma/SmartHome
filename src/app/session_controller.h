@@ -103,6 +103,9 @@ private:
     QString city_;
     QString weatherLine_;
     QString weatherIconFile_;
+    QString weatherLocationCity_;
+    QString pendingGeocodingCity_;
+    std::optional<GeoHit> weatherLocation_;
     QList<RoomRow> roomRows_;
     QString pendingDeviceOnId_;
     QString pendingReadingId_;
