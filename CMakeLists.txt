@@ -6,7 +6,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Gui Network Test)
+include(CTest)
+find_package(Qt6 6.11 REQUIRED COMPONENTS Quick Gui Network)
 
 qt_standard_project_setup(REQUIRES 6.11)
 set(QT_USE_TARGET_ANDROID_BUILD_DIR TRUE CACHE BOOL "Separate Android build directory for each executable")
@@ -38,47 +39,49 @@ else()
     target_compile_options(smarthome_core PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-enable_testing()
-qt_add_executable(tst_home_rules tests/tst_home_rules.cpp)
-target_link_libraries(tst_home_rules PRIVATE smarthome_core Qt6::Test)
-add_test(NAME home_rules COMMAND tst_home_rules)
-qt_add_executable(tst_home_json tests/tst_home_json.cpp)
-target_link_libraries(tst_home_json PRIVATE smarthome_core Qt6::Test)
-add_test(NAME home_json COMMAND tst_home_json)
-qt_add_executable(tst_token_store tests/tst_token_store.cpp)
-target_link_libraries(tst_token_store PRIVATE smarthome_core Qt6::Test)
-add_test(NAME token_store COMMAND tst_token_store)
-qt_add_executable(tst_api_client tests/tst_api_client.cpp)
-target_link_libraries(tst_api_client PRIVATE smarthome_core Qt6::Test)
-add_test(NAME api_client COMMAND tst_api_client)
-qt_add_executable(tst_session_controller
-    tests/tst_session_controller.cpp
-    src/app/session_controller.cpp
-    src/app/session_controller.h
-)
-target_link_libraries(tst_session_controller PRIVATE smarthome_core Qt6::Test Qt6::Gui)
-target_compile_definitions(tst_session_controller PRIVATE
-    "SMARTHOME_SUPABASE_URL=\"${SMARTHOME_SUPABASE_URL}\""
-    "SMARTHOME_SUPABASE_ANON_KEY=\"${SMARTHOME_SUPABASE_ANON_KEY}\"")
-add_test(NAME session_controller COMMAND tst_session_controller)
-if(ANDROID)
-    foreach(android_test_target IN ITEMS tst_home_rules tst_home_json tst_token_store tst_api_client)
-        target_link_libraries(${android_test_target} PRIVATE Qt6::Gui)
-    endforeach()
-    set_property(TARGET tst_token_store PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
-        "${CMAKE_SOURCE_DIR}/android")
-    set_property(TARGET tst_session_controller PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
-        "${CMAKE_SOURCE_DIR}/android")
-endif()
-if(WIN32)
-    cmake_path(GET Qt6_DIR PARENT_PATH _qt_cmake_dir)
-    cmake_path(GET _qt_cmake_dir PARENT_PATH _qt_lib_dir)
-    cmake_path(GET _qt_lib_dir PARENT_PATH _qt_prefix)
-    cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH _cxx_bin)
-    set_property(TEST home_rules home_json token_store api_client session_controller
-        PROPERTY ENVIRONMENT_MODIFICATION
-        "PATH=path_list_prepend:${_qt_prefix}/bin"
-        "PATH=path_list_prepend:${_cxx_bin}")
+if(BUILD_TESTING)
+    find_package(Qt6 6.11 REQUIRED COMPONENTS Test)
+    qt_add_executable(tst_home_rules tests/tst_home_rules.cpp)
+    target_link_libraries(tst_home_rules PRIVATE smarthome_core Qt6::Test)
+    add_test(NAME home_rules COMMAND tst_home_rules)
+    qt_add_executable(tst_home_json tests/tst_home_json.cpp)
+    target_link_libraries(tst_home_json PRIVATE smarthome_core Qt6::Test)
+    add_test(NAME home_json COMMAND tst_home_json)
+    qt_add_executable(tst_token_store tests/tst_token_store.cpp)
+    target_link_libraries(tst_token_store PRIVATE smarthome_core Qt6::Test)
+    add_test(NAME token_store COMMAND tst_token_store)
+    qt_add_executable(tst_api_client tests/tst_api_client.cpp)
+    target_link_libraries(tst_api_client PRIVATE smarthome_core Qt6::Test)
+    add_test(NAME api_client COMMAND tst_api_client)
+    qt_add_executable(tst_session_controller
+        tests/tst_session_controller.cpp
+        src/app/session_controller.cpp
+        src/app/session_controller.h
+    )
+    target_link_libraries(tst_session_controller PRIVATE smarthome_core Qt6::Test Qt6::Gui)
+    target_compile_definitions(tst_session_controller PRIVATE
+        "SMARTHOME_SUPABASE_URL=\"${SMARTHOME_SUPABASE_URL}\""
+        "SMARTHOME_SUPABASE_ANON_KEY=\"${SMARTHOME_SUPABASE_ANON_KEY}\"")
+    add_test(NAME session_controller COMMAND tst_session_controller)
+    if(ANDROID)
+        foreach(android_test_target IN ITEMS tst_home_rules tst_home_json tst_token_store tst_api_client)
+            target_link_libraries(${android_test_target} PRIVATE Qt6::Gui)
+        endforeach()
+        set_property(TARGET tst_token_store PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
+            "${CMAKE_SOURCE_DIR}/android")
+        set_property(TARGET tst_session_controller PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
+            "${CMAKE_SOURCE_DIR}/android")
+    endif()
+    if(WIN32)
+        cmake_path(GET Qt6_DIR PARENT_PATH _qt_cmake_dir)
+        cmake_path(GET _qt_cmake_dir PARENT_PATH _qt_lib_dir)
+        cmake_path(GET _qt_lib_dir PARENT_PATH _qt_prefix)
+        cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH _cxx_bin)
+        set_property(TEST home_rules home_json token_store api_client session_controller
+            PROPERTY ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:${_qt_prefix}/bin"
+            "PATH=path_list_prepend:${_cxx_bin}")
+    endif()
 endif()
 
 qt_add_executable(appSmartHome
