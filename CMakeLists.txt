@@ -67,6 +67,8 @@ if(ANDROID)
     endforeach()
     set_property(TARGET tst_token_store PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
         "${CMAKE_SOURCE_DIR}/android")
+    set_property(TARGET tst_session_controller PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
+        "${CMAKE_SOURCE_DIR}/android")
 endif()
 if(WIN32)
     cmake_path(GET Qt6_DIR PARENT_PATH _qt_cmake_dir)
