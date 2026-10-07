@@ -87,7 +87,7 @@ Decisions and screens use STAR. A Result without a number is incomplete. The API
 
 - Situation: A room is open.
 - Task: See devices and change a light or plug.
-- Action: One tap toggles and sends the desired on/off value. A thermometer shows degrees and has no switch. Edit and delete are secondary. Deleting a room deletes its devices.
+- Action: One tap toggles and sends the desired on/off value. Writes to the same profile, room, or device are serialized until the response arrives. A thermometer shows degrees and has no switch. Edit and delete are secondary. Deleting a room deletes its devices.
 - Result: 3 device kinds. 1 tap per toggle. A failed toggle restores the previous value and shows 1 error string.
 
 Colors are `#18171C`, `#2F2F37`, `#536DED`, and `#FFFFFF`.

@@ -55,6 +55,12 @@ SessionController::SessionController(QString baseUrl, QString anonKey, QString t
                 latestProfileUpdateRequestId_ = requestId;
                 ++profileMutationGeneration_;
                 pendingProfileMutations_.insert(requestId);
+                if (!resourceId.isEmpty()) {
+                    const QString key = QStringLiteral("profile:") + resourceId;
+                    entityKeysByRequestId_.insert(requestId, key);
+                    latestEntityRequestIds_.insert(key, requestId);
+                    pendingEntityMutations_.insert(key);
+                }
             } else if (op == QLatin1String("rooms")) {
                 latestRoomsRequestId_ = requestId;
                 roomRequestGenerations_.insert(requestId, homeMutationGeneration_);
@@ -71,6 +77,7 @@ SessionController::SessionController(QString baseUrl, QString anonKey, QString t
                     const QString key = prefix + resourceId;
                     entityKeysByRequestId_.insert(requestId, key);
                     latestEntityRequestIds_.insert(key, requestId);
+                    pendingEntityMutations_.insert(key);
                 }
             }
         });
@@ -178,6 +185,10 @@ bool SessionController::saveSettings(const QString& firstName, const QString& ci
         setStatus(tr("Sign in to manage your profile."));
         return false;
     }
+    if (!pendingProfileMutations_.isEmpty()) {
+        setStatus(tr("Wait for the current profile update to finish."));
+        return false;
+    }
     const QString normalizedName = firstName.trimmed();
     const QString normalizedCity = city.trimmed();
     if (!isNameOk(normalizedName)) {
@@ -224,6 +235,10 @@ bool SessionController::renameRoom(const QString& roomId, const QString& name)
         setStatus(tr("Choose an existing room."));
         return false;
     }
+    if (pendingEntityMutations_.contains(QStringLiteral("room:") + roomId)) {
+        setStatus(tr("Wait for the current room update to finish."));
+        return false;
+    }
     const auto room = std::find_if(roomRows_.cbegin(), roomRows_.cend(), [&roomId](const RoomRow& row) {
         return row.id == roomId;
     });
@@ -249,6 +264,10 @@ bool SessionController::deleteRoom(const QString& roomId)
     }
     if (!isUuid(roomId)) {
         setStatus(tr("Choose an existing room."));
+        return false;
+    }
+    if (pendingEntityMutations_.contains(QStringLiteral("room:") + roomId)) {
+        setStatus(tr("Wait for the current room update to finish."));
         return false;
     }
     const bool exists = std::any_of(roomRows_.cbegin(), roomRows_.cend(), [&roomId](const RoomRow& room) {
@@ -311,6 +330,10 @@ bool SessionController::setDeviceOn(const QString& deviceId, bool on)
         setStatus(tr("Choose an existing switchable device."));
         return false;
     }
+    if (pendingEntityMutations_.contains(QStringLiteral("device:") + deviceId)) {
+        setStatus(tr("Wait for the current device update to finish."));
+        return false;
+    }
     for (RoomRow& room : roomRows_) {
         for (DeviceRow& device : room.devices) {
             if (device.id != deviceId) {
@@ -346,6 +369,10 @@ bool SessionController::renameDevice(const QString& deviceId, const QString& nam
         setStatus(tr("Choose an existing device."));
         return false;
     }
+    if (pendingEntityMutations_.contains(QStringLiteral("device:") + deviceId)) {
+        setStatus(tr("Wait for the current device update to finish."));
+        return false;
+    }
     const QString normalizedName = name.trimmed();
     if (!isNameOk(normalizedName)) {
         setStatus(tr("Use 1 to 40 characters for the device name."));
@@ -373,6 +400,10 @@ bool SessionController::deleteDevice(const QString& deviceId)
     }
     if (!isUuid(deviceId)) {
         setStatus(tr("Choose an existing device."));
+        return false;
+    }
+    if (pendingEntityMutations_.contains(QStringLiteral("device:") + deviceId)) {
+        setStatus(tr("Wait for the current device update to finish."));
         return false;
     }
     const bool exists = std::any_of(roomRows_.cbegin(), roomRows_.cend(), [&deviceId](const RoomRow& room) {
@@ -869,6 +900,7 @@ void SessionController::clearLocal()
     pendingHomeMutations_.clear();
     entityKeysByRequestId_.clear();
     latestEntityRequestIds_.clear();
+    pendingEntityMutations_.clear();
     api_.setAccessToken({});
     if (wasSignedIn) {
         emit signedInChanged();
@@ -1021,7 +1053,10 @@ void SessionController::finishTrackedResponse(quint64 requestId)
     profileRequestsDuringMutation_.remove(requestId);
     pendingProfileMutations_.remove(requestId);
     pendingHomeMutations_.remove(requestId);
-    entityKeysByRequestId_.remove(requestId);
+    const QString entityKey = entityKeysByRequestId_.take(requestId);
+    if (!entityKey.isEmpty() && latestEntityRequestIds_.value(entityKey) == requestId) {
+        pendingEntityMutations_.remove(entityKey);
+    }
 }
 
 void SessionController::clearPendingDeviceToggle(bool restore)

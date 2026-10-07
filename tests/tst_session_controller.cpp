@@ -34,9 +34,11 @@ struct AuthServerState
     QByteArray logoutRequest;
     QByteArray profileRequest;
     QByteArray profileUpdateRequest;
+    int profileUpdateRequests = 0;
     QByteArray roomsRequest;
     QByteArray roomInsertRequest;
     QByteArray roomUpdateRequest;
+    int roomUpdateRequests = 0;
     QByteArray roomDeleteRequest;
     QByteArray deviceInsertRequest;
     QByteArray deviceToggleRequest;
@@ -160,6 +162,7 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                     deferredResponses = &state.pendingProfileResponses;
                 }
             } else if (requestLine.startsWith(QByteArrayLiteral("PATCH /rest/v1/profiles?id=eq."))) {
+                ++state.profileUpdateRequests;
                 state.profileUpdateRequest = *request;
                 payload = state.updatedProfileBody;
             } else if (requestLine.startsWith(QByteArrayLiteral("GET /rest/v1/rooms?select="))) {
@@ -184,6 +187,7 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                     deferredResponses = &state.pendingRoomInsertResponses;
                 }
             } else if (requestLine.startsWith(QByteArrayLiteral("PATCH /rest/v1/rooms?id=eq."))) {
+                ++state.roomUpdateRequests;
                 state.roomUpdateRequest = *request;
                 payload = state.updatedRoomBody;
             } else if (requestLine.startsWith(QByteArrayLiteral("DELETE /rest/v1/rooms?id=eq."))) {
@@ -369,7 +373,7 @@ private slots:
     void loadsWeatherForProfileCity();
     void pollingFollowsSignInAndApplicationState();
     void reloadFetchesProfileAndRooms();
-    void ignoresOlderDeviceMutationResponse();
+    void serializesSameDeviceMutations();
     void ignoresOlderWeatherForecastResponse();
     void ignoresWeatherResponseAfterCityCleared();
 };
@@ -680,6 +684,8 @@ void SessionControllerTest::loadsAndSavesProfileSettings()
     QVERIFY(state.profileUpdateRequest.isEmpty());
 
     QVERIFY(controller.saveSettings(QStringLiteral(" Amina K "), QStringLiteral(" Nairobi ")));
+    QVERIFY(!controller.saveSettings(QStringLiteral("Amina L"), QStringLiteral("Mombasa")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileUpdateRequests, 1, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(controller.firstName(), QStringLiteral("Amina K"), 5000);
     QCOMPARE(controller.city(), QStringLiteral("Nairobi"));
 
@@ -689,6 +695,8 @@ void SessionControllerTest::loadsAndSavesProfileSettings()
     const QJsonObject body = requestBody(state.profileUpdateRequest);
     QCOMPARE(body.value(QStringLiteral("first_name")).toString(), QStringLiteral("Amina K"));
     QCOMPARE(body.value(QStringLiteral("city")).toString(), QStringLiteral("Nairobi"));
+    QVERIFY(controller.saveSettings(QStringLiteral("Amina L"), QStringLiteral("Mombasa")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.profileUpdateRequests, 2, 5000);
 }
 
 void SessionControllerTest::loadsAndCreatesRooms()
@@ -913,13 +921,24 @@ void SessionControllerTest::renamesAndDeletesDevice()
 
     QVERIFY(!controller.renameDevice(deviceId, QString()));
     QVERIFY(state.deviceUpdateRequest.isEmpty());
+    state.deferDeviceUpdateResponses = true;
     QVERIFY(controller.renameDevice(deviceId, QStringLiteral(" Desk lamp ")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.deviceUpdateRequests, 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceUpdateResponses.size(), 1, 5000);
+    QVERIFY(!controller.renameDevice(deviceId, QStringLiteral("Reading lamp")));
+    QCOMPARE(state.deviceUpdateRequests, 1);
+    const QByteArray firstUpdateRequest = state.deviceUpdateRequest;
+    writeResponse(state.pendingDeviceUpdateResponses.takeFirst());
     QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices"))
         .toList().first().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Desk lamp"), 5000);
-    const qsizetype updateHeaderEnd = state.deviceUpdateRequest.indexOf(QByteArrayLiteral("\r\n\r\n"));
-    QVERIFY(state.deviceUpdateRequest.left(updateHeaderEnd).toLower()
+    state.deferDeviceUpdateResponses = false;
+    QVERIFY(controller.renameDevice(deviceId, QStringLiteral("Reading lamp")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices"))
+        .toList().first().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Reading lamp"), 5000);
+    const qsizetype updateHeaderEnd = firstUpdateRequest.indexOf(QByteArrayLiteral("\r\n\r\n"));
+    QVERIFY(firstUpdateRequest.left(updateHeaderEnd).toLower()
         .contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
-    QCOMPARE(requestBody(state.deviceUpdateRequest).value(QStringLiteral("name")).toString(),
+    QCOMPARE(requestBody(firstUpdateRequest).value(QStringLiteral("name")).toString(),
         QStringLiteral("Desk lamp"));
 
     QVERIFY(!controller.deleteDevice(QStringLiteral("not-a-uuid")));
@@ -954,6 +973,10 @@ void SessionControllerTest::renamesAndDeletesRoom()
         QStringLiteral("Lounge")));
     QVERIFY(state.roomUpdateRequest.isEmpty());
     QVERIFY(controller.renameRoom(roomId, QStringLiteral(" Lounge ")));
+    QVERIFY(!controller.renameRoom(roomId, QStringLiteral("Bedroom")));
+    QVERIFY(!controller.deleteRoom(roomId));
+    QVERIFY(state.roomDeleteRequest.isEmpty());
+    QTRY_COMPARE_WITH_TIMEOUT(state.roomUpdateRequests, 1, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("name")).toString(),
         QStringLiteral("Lounge"), 5000);
     QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList().size(), 1);
@@ -962,6 +985,15 @@ void SessionControllerTest::renamesAndDeletesRoom()
         .contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
     QCOMPARE(requestBody(state.roomUpdateRequest).value(QStringLiteral("name")).toString(),
         QStringLiteral("Lounge"));
+
+    state.updatedRoomBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Bedroom","position":0}])");
+    QVERIFY(controller.renameRoom(roomId, QStringLiteral("Bedroom")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.roomUpdateRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("name")).toString(),
+        QStringLiteral("Bedroom"), 5000);
+    QCOMPARE(requestBody(state.roomUpdateRequest).value(QStringLiteral("name")).toString(),
+        QStringLiteral("Bedroom"));
 
     QVERIFY(!controller.deleteRoom(QStringLiteral("not-a-uuid")));
     QVERIFY(state.roomDeleteRequest.isEmpty());
@@ -1202,7 +1234,7 @@ void SessionControllerTest::reloadFetchesProfileAndRooms()
                  .value(QStringLiteral("name")).toString(), QStringLiteral("Latest light"));
 }
 
-void SessionControllerTest::ignoresOlderDeviceMutationResponse()
+void SessionControllerTest::serializesSameDeviceMutations()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -1221,18 +1253,22 @@ void SessionControllerTest::ignoresOlderDeviceMutationResponse()
     const QString deviceId = QStringLiteral("123e4567-e89b-12d3-a456-426614174020");
     QVERIFY(controller.renameDevice(deviceId, QStringLiteral("Older name")));
     QTRY_COMPARE_WITH_TIMEOUT(state.deviceUpdateRequests, 1, 5000);
-    QVERIFY(controller.renameDevice(deviceId, QStringLiteral("Latest name")));
-    QTRY_COMPARE_WITH_TIMEOUT(state.deviceUpdateRequests, 2, 5000);
-    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceUpdateResponses.size(), 2, 5000);
+    QVERIFY(!controller.renameDevice(deviceId, QStringLiteral("Latest name")));
+    QCOMPARE(state.deviceUpdateRequests, 1);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceUpdateResponses.size(), 1, 5000);
 
-    const DeferredResponse latest = state.pendingDeviceUpdateResponses.takeAt(1);
-    writeResponse(latest);
-    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
-                                  .first().toMap().value(QStringLiteral("name")).toString(),
-        QStringLiteral("Latest name"), 5000);
     const DeferredResponse older = state.pendingDeviceUpdateResponses.takeFirst();
     writeResponse(older);
     QTRY_COMPARE_WITH_TIMEOUT(older.socket->state(), QAbstractSocket::UnconnectedState, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
+                                  .first().toMap().value(QStringLiteral("name")).toString(),
+        QStringLiteral("Older name"), 5000);
+    state.deferDeviceUpdateResponses = false;
+    QVERIFY(controller.renameDevice(deviceId, QStringLiteral("Latest name")));
+    QTRY_COMPARE_WITH_TIMEOUT(state.deviceUpdateRequests, 2, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
+                                  .first().toMap().value(QStringLiteral("name")).toString(),
+        QStringLiteral("Latest name"), 5000);
     QTest::qWait(50);
     QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
                  .first().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Latest name"));
