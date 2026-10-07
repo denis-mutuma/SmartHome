@@ -23,7 +23,7 @@ flowchart LR
   api --> weather[Open-Meteo]
 ```
 
-- [main.cpp](../main.cpp) loads `SmartHome/Main`; [CMakeLists.txt](../CMakeLists.txt) aliases [AccountMain.qml](../AccountMain.qml) to that entrypoint. Root [Main.qml](../Main.qml) and its prototype widgets are not in the active QML module.
+- [main.cpp](../main.cpp) loads `SmartHome/Main`; [CMakeLists.txt](../CMakeLists.txt) aliases [AccountMain.qml](../AccountMain.qml) to that entrypoint.
 - [SessionController](../src/app/session_controller.cpp) coordinates accounts, profile, room/device mutations, weather and polling. [ApiClient](../src/app/api_client.cpp) implements the HTTP requests.
 - Device switches patch `devices.is_on`. There is no implemented device adapter, command-delivery path or physical acknowledgement; an affected database row is not physical confirmation.
 - Thermometers are simulated: creation supplies a value and timestamp, and room responses can trigger random replacement readings. Inactive state stops future periodic polling, but in-flight work can still finish. These values are not real telemetry.
