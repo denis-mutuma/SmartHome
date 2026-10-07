@@ -1,6 +1,8 @@
 # SmartHome
 
-Qt 6.11 client for Android and Windows. Accounts and rooms live in one Supabase project. Weather comes from Open-Meteo.
+Qt 6.11 / QML / C++ prototype for Android and Windows. Accounts and rooms currently use Supabase; weather uses Open-Meteo. Device switches update database rows and thermometer readings are simulated, not hardware telemetry.
+
+The real-device product direction and undecided integration choices are explained in [docs/architecture.md](docs/architecture.md).
 
 Coding agents use [AGENTS.md](AGENTS.md); explanatory documents are references, not additional instructions.
 

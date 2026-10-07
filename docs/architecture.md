@@ -1,103 +1,64 @@
-# Architecture Status
+# Architecture
 
-This repository is being rebuilt from a prototype. The current implementation is documented as observed behavior; the target design below is a candidate, not an approved system specification. See [AGENTS.md](../AGENTS.md) for rebuild constraints and [README.md](../README.md) for the current build baseline.
+This is an explanatory reference, not agent policy. [AGENTS.md](../AGENTS.md) contains coding-agent instructions; [README.md](../README.md) describes the current build and setup.
 
-## Observed Prototype
+## Product Direction
 
-The current client is Qt 6 / QML with a C++ session controller and HTTP client. It calls Supabase Auth and PostgREST, and Open-Meteo for weather. The bootstrap and numbered upgrade migrations describe `profiles`, `rooms`, and `devices`; the schema has not been validated against real devices or the external telemetry producer.
+The approved goal is a Qt/QML and C++ client for one person controlling real devices from multiple clients, including remote access. Windows and Android are the first release targets; Linux, macOS and iOS remain future targets until validated.
 
-```mermaid
-flowchart LR
-  person[Person]
-  client[Current Qt/QML client]
-  auth[Supabase Auth]
-  rest[Supabase PostgREST]
-  db[(Supabase Postgres<br/>schema per prototype migration)]
-  weather[Open-Meteo]
-  writer[External sensor writer<br/>not inspected]
-  person --> client
-  client --> auth
-  client --> rest
-  rest <--> db
-  client --> weather
-  writer -.->|reported write path; contract unknown| db
-```
+There should be no recurring cloud subscription. Equipment, an always-on host, power, distribution and licensing may still have costs. Free service quotas are not an availability guarantee.
 
-The client can write `devices.is_on`, but this repository contains no command broker, device adapter, gateway, or acknowledgement path. A successful database write therefore does not establish that a physical device changed state. The external sensor writer is user-reported; its repository, payload, credentials, and destination schema remain unknown.
+Hardware, protocols, backend and account model have not been selected. The current prototype does not establish those choices or prove a working hardware integration.
 
-The client stores an access token in memory and a refresh token in its platform-specific session file. Writes use atomic file replacement. Windows protects the token with DPAPI; Android encrypts it with AES-GCM using a key held in Android Keystore. A token persistence failure prevents adopting the incoming token pair; during refresh, it clears local auth state rather than continue with an unpersisted rotated token. Transport, HTTP 408, 429, and 5xx refresh failures preserve the session and queued authorized requests for retry on the 15-second timer. Definitive refresh rejection or a malformed successful response clears local session state and pending/retry-queued requests so they cannot replay after another sign-in.
-
-The app version is `1.0.0`, defined once by the top-level CMake project and propagated to `QCoreApplication`, platform bundle metadata, and Android version name/code. Android package ID is `org.mutuma.smarthome`.
-
-## Current Client Shape
-
-```mermaid
-flowchart TB
-  qml[QML screens]
-  session[SessionController]
-  api[ApiClient]
-  json[home_json]
-  rules[home_rules]
-  tokens[token_store]
-  qml --> session
-  session --> api
-  session --> json
-  session --> rules
-  session --> tokens
-```
-
-`main.cpp` loads `SmartHome/Main`; CMake aliases `AccountMain.qml` to that module entrypoint. The root `Main.qml` and the prototype widgets not referenced by the active module are legacy sources. `SessionController` coordinates authentication, refresh, room/device state, weather, and mutation callbacks. This boundary describes the current implementation, not a required shape for future hardware integration. The five CTest targets cover core rules, JSON parsing, token storage, API-client request behavior, and session-controller refresh, persistence, polling, and mutation-result behavior. No test proves backend authorization against a live project or physical-device action.
-
-## Confirmed Gaps
-
-- Device toggles patch a row directly. There is no observed path to hardware, command identity, device acknowledgement, or reported-state reconciliation.
-- Thermometers are simulated by the client, not by an observed physical sensor writer. New thermometers start at 22.0°C; while signed in and active, polling writes a bounded replacement when `reading_at` is null or at least 15 minutes old. This is not evidence of physical measurement or external telemetry.
-- The client can create thermometers with a non-null Celsius value and timestamp. The schema permits `reading_at` to be null for an existing thermometer; the parser keeps such rows visible so the stale-reading path can repair them. The numbered upgrade migration rejects existing null-Celsius rows for explicit remediation rather than inventing values.
-- The schema constrains thermometer values and grants access using the current user-token model. RLS, household sharing, and the external writer's requirements have not been validated against a live Supabase project.
-- The app polls every 20 seconds only while signed in and active. Inactive state stops future polling, but does not cancel requests already in flight. There is no demonstrated live command delivery or reconnect protocol.
-- Per-request retry identity, sign-out cancellation, and mutation-result handling prevent known stale-response, cross-account replay, late-reply, and premature-dismissal cases. A successful database write still does not prove that a physical device acted.
-- Room and device mutations only report success when PostgREST returns an affected row; delete requests ask for the deleted row ID. Profile updates validate their returned profile row.
-
-These are review findings against the current app. Fixes that depend on the actual telemetry or hardware contract must wait for that contract rather than guessing new columns or policies.
-
-## Candidate Target Pattern
-
-For custom devices, a candidate command path is an authenticated client, a server-side authorization/command boundary, and a gateway or adapter that speaks the device protocol. If Home Assistant already supports the actual devices, evaluate it as the integration boundary before building custom adapters. MQTT is an option for custom gateways, not a decision for this project.
+## Current Prototype
 
 ```mermaid
 flowchart LR
-  client[Client<br/>framework TBD]
-  auth[Identity and authorization<br/>provider TBD]
-  command[Command boundary<br/>durable status TBD]
-  adapter[Existing hub or<br/>custom gateway TBD]
-  device[Physical device]
-  ingest[Telemetry ingestion<br/>contract TBD]
-  readings[Authoritative reported state<br/>and measurements]
-  notify[Realtime notification<br/>or bounded polling]
-  client --> auth
-  client -->|desired action| command
-  command --> adapter
-  adapter -->|protocol TBD| device
-  device -->|acknowledgement and telemetry| adapter
-  adapter --> ingest
-  ingest --> readings
-  readings -.-> notify
-  notify -.-> client
+  ui[QML screens] --> controller[C++ SessionController]
+  controller --> api[C++ ApiClient]
+  controller --> parsing[JSON parsing and rules]
+  controller --> storage[Platform token storage]
+  api --> auth[Supabase Auth]
+  api --> rest[PostgREST and Postgres]
+  api --> weather[Open-Meteo]
 ```
 
-The UI should distinguish a requested state from device-reported state. A command may be shown as pending until acknowledged, and should expose timeout/failure rather than claiming success after a database write. Realtime delivery, if selected, should notify the client to reconcile with authoritative state after reconnect; notifications alone are not durable state.
+- [main.cpp](../main.cpp) loads `SmartHome/Main`; [CMakeLists.txt](../CMakeLists.txt) aliases [AccountMain.qml](../AccountMain.qml) to that entrypoint. Root [Main.qml](../Main.qml) and its prototype widgets are not in the active QML module.
+- [SessionController](../src/app/session_controller.cpp) coordinates accounts, profile, room/device mutations, weather and polling. [ApiClient](../src/app/api_client.cpp) implements the HTTP requests.
+- Device switches patch `devices.is_on`. There is no implemented device adapter, command-delivery path or physical acknowledgement; an affected database row is not physical confirmation.
+- Thermometers are simulated: creation supplies a value and timestamp, and room responses can trigger random replacement readings. Inactive state stops future periodic polling, but in-flight work can still finish. These values are not real telemetry.
+- [The schema](../supabase/migrations/0001_home.sql) owns prototype profiles, rooms and devices. Its thermometer constraints model simulation, not a validated sensor contract. [The upgrade migration](../supabase/migrations/0002_thermometer_celsius_not_null.sql) rejects existing null values for explicit remediation.
+- Access tokens stay in memory. [Token storage](../src/app/token_store.cpp) uses atomic file replacement, Windows DPAPI and Android Keystore-backed encryption; other platforms currently fall back to plaintext and are not ready for credential persistence.
+- Refresh is single-flight and authorized retries are bounded. Transient refresh failures preserve the session; definitive refresh rejection, malformed refresh success or failure to persist tokens during refresh cancels pending requests and clears local auth state.
+- Request identity, stale-response checks and same-resource serialization protect client state. These protections do not establish live backend authorization or hardware behavior.
 
-## Decision Gates
+The five [test suites](../tests) cover rules, parsing, token storage, HTTP contracts and controller lifecycle/mutation behavior. They include deferred-response and retry coverage, but do not validate a live project's access policies or real devices. App and platform versions are derived from the CMake project rather than maintained separately.
 
-| Decision | Evidence needed before implementation |
-| --- | --- |
-| Client framework and launch platforms | Required OSes, native capabilities, packaging, team/tooling constraints |
-| Device integration | Device models, existing hub, protocol, command and acknowledgement behavior |
-| Telemetry | Writer source, payload, identity, units, timestamps, cadence, retention, authorization |
-| Backend | Hosting/cost limits, household authorization, operational ownership, migration and backup needs |
-| Offline behavior | Whether commands may queue, expiry semantics, reconnect reconciliation, stale-data display |
-| Security model | Account/household membership, device credentials, revocation, audit and threat boundaries |
+## Integration Options
 
-## Required Validation Path
+No option has been selected or given preference. The comparison depends on representative devices, remote reachability and operating ownership, not on the prototype's vendor choices.
 
-Before committing to hardware or external telemetry changes, simulate one device and test one representative real integration. Verify authorization, command expiry and duplicate handling, device acknowledgement, offline/reconnect behavior, telemetry provenance, and state freshness. Design persistence only from the observed contract. Do not treat the current migrations as validation of the hardware or external-writer contract.
+| Option | Potential simplification | Evidence needed |
+| --- | --- | --- |
+| Existing hub | Reuse device adapters, identity and authoritative state instead of duplicating them | Device compatibility, reported-state guarantees, host requirements and secure remote access |
+| Vendor API | Reuse the device vendor's supported control and telemetry contract | Supported models, credentials, subscription terms, API access and outage behavior |
+| Custom gateway | Implement only the protocol needed by actual custom devices | Protocol, command acknowledgement, device identity, telemetry provenance and hosting/maintenance costs |
+
+A database alone does not deliver commands to devices. Separate app accounts, persistence, brokers and custom adapters are justified only if the selected integration requires them.
+
+## Proposed Minimal Client
+
+The proposed first version connects to one selected authority, lists rooms/areas and devices, sends explicit on/off commands, and displays reported state and timestamped sensor readings. Connection settings, disconnect, pending/error/offline states and reconnect reconciliation are part of that workflow.
+
+Weather, separate registration/profile features and application-owned room/device management are candidates for retirement, not approved removals. A hub may already own those resources. Histories, scenes, schedules, household sharing, multiple integrations and offline command queues are outside this proposed first version.
+
+The UI separates command acceptance, device-reported state and physical confirmation. A hub can report an optimistic state; the display must reflect the integration's actual guarantees. Measurements retain source, units, observation time and unknown/stale states rather than inventing replacements.
+
+## Selection and Validation
+
+1. Select a representative switchable device and sensor, and compare the three integration routes against their actual contracts and total costs.
+2. Test control and readings locally and remotely, including wrong-user access, credential expiry/revocation, disconnected devices, timeout and duplicate/out-of-order responses.
+3. Verify telemetry provenance and freshness, and reconcile an authoritative snapshot after reconnect. A service acknowledgement or mock test cannot prove physical action.
+4. Obtain approval for the integration, account model, remote-access route and feature retirements before replacing production paths or designing new persistence.
+
+Until that evidence exists, the hardware/backend decision remains open. Existing workflows and applied migration history are preserved; disposable prototype data is not permission to delete remote resources or local builds.
