@@ -67,6 +67,10 @@ signals:
     void weatherChanged();
     void roomsChanged();
     void statusChanged();
+    void roomCreated(const QString& name);
+    void roomCreateFailed(const QString& name);
+    void deviceCreated(const QString& roomId, const QString& name);
+    void deviceCreateFailed(const QString& roomId, const QString& name);
 
 private slots:
     void refreshIfNeeded();
@@ -102,6 +106,9 @@ private:
     QList<RoomRow> roomRows_;
     QString pendingDeviceOnId_;
     QString pendingReadingId_;
+    QString pendingRoomCreateName_;
+    QString pendingDeviceCreateRoomId_;
+    QString pendingDeviceCreateName_;
     std::optional<bool> previousDeviceOn_;
     QString statusMessage_;
     bool signedIn_ = false;

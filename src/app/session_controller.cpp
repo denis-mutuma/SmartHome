@@ -199,12 +199,17 @@ bool SessionController::createRoom(const QString& name)
         setStatus(tr("Sign in to manage your home."));
         return false;
     }
+    if (!pendingRoomCreateName_.isEmpty()) {
+        setStatus(tr("Wait for the current room creation to finish."));
+        return false;
+    }
     const QString normalizedName = name.trimmed();
     if (!isNameOk(normalizedName)) {
         setStatus(tr("Use 1 to 40 characters for the room name."));
         return false;
     }
     setStatus({});
+    pendingRoomCreateName_ = normalizedName;
     api_.insertRoom(normalizedName, nextRoomPosition());
     return true;
 }
@@ -264,6 +269,10 @@ bool SessionController::createDevice(const QString& roomId, const QString& name,
         setStatus(tr("Sign in to manage your home."));
         return false;
     }
+    if (!pendingDeviceCreateName_.isEmpty()) {
+        setStatus(tr("Wait for the current device creation to finish."));
+        return false;
+    }
     const QString normalizedName = name.trimmed();
     if (!isNameOk(normalizedName)) {
         setStatus(tr("Use 1 to 40 characters for the device name."));
@@ -282,6 +291,8 @@ bool SessionController::createDevice(const QString& roomId, const QString& name,
         return false;
     }
     setStatus({});
+    pendingDeviceCreateRoomId_ = roomId;
+    pendingDeviceCreateName_ = normalizedName;
     api_.insertDevice(roomId, normalizedName, kind, nextDevicePosition(roomId));
     return true;
 }
@@ -460,12 +471,16 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
     if (op == QLatin1String("room-insert")) {
         const std::optional<QList<RoomRow>> rooms = parseRooms(body);
         if (!rooms.has_value() || rooms->size() != 1) {
+            const QString name = std::exchange(pendingRoomCreateName_, QString());
             setStatus(tr("The service could not complete the request."));
+            emit roomCreateFailed(name);
             return;
         }
+        const QString name = std::exchange(pendingRoomCreateName_, QString());
         roomRows_.append(rooms->first());
         emit roomsChanged();
         setStatus({});
+        emit roomCreated(name);
         return;
     }
     if (op == QLatin1String("room-update")) {
@@ -515,19 +530,28 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
     if (op == QLatin1String("device-insert")) {
         const std::optional<QList<DeviceRow>> devices = parseDevices(body);
         if (!devices.has_value() || devices->size() != 1) {
+            const QString roomId = std::exchange(pendingDeviceCreateRoomId_, QString());
+            const QString name = std::exchange(pendingDeviceCreateName_, QString());
             setStatus(tr("The service could not complete the request."));
+            emit deviceCreateFailed(roomId, name);
             return;
         }
         const DeviceRow& inserted = devices->first();
         for (RoomRow& room : roomRows_) {
             if (room.id == inserted.roomId) {
+                const QString roomId = std::exchange(pendingDeviceCreateRoomId_, QString());
+                const QString name = std::exchange(pendingDeviceCreateName_, QString());
                 room.devices.append(inserted);
                 emit roomsChanged();
                 setStatus({});
+                emit deviceCreated(roomId, name);
                 return;
             }
         }
+        const QString roomId = std::exchange(pendingDeviceCreateRoomId_, QString());
+        const QString name = std::exchange(pendingDeviceCreateName_, QString());
         setStatus(tr("The service could not complete the request."));
+        emit deviceCreateFailed(roomId, name);
         return;
     }
     if (op == QLatin1String("device-update")) {
@@ -690,11 +714,19 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
         clearRefreshToken(tokenFilePath_);
         clearLocal();
         setStatus(message);
+    } else if (op == QLatin1String("room-insert")) {
+        const QString name = std::exchange(pendingRoomCreateName_, QString());
+        setStatus(message);
+        emit roomCreateFailed(name);
+    } else if (op == QLatin1String("device-insert")) {
+        const QString roomId = std::exchange(pendingDeviceCreateRoomId_, QString());
+        const QString name = std::exchange(pendingDeviceCreateName_, QString());
+        setStatus(message);
+        emit deviceCreateFailed(roomId, name);
     } else if (op == QLatin1String("login") || op == QLatin1String("signup")
         || op == QLatin1String("profile") || op == QLatin1String("profile-update")
-        || op == QLatin1String("rooms") || op == QLatin1String("room-insert")
-        || op == QLatin1String("room-update") || op == QLatin1String("room-delete")
-        || op == QLatin1String("device-insert")) {
+        || op == QLatin1String("rooms") || op == QLatin1String("room-update")
+        || op == QLatin1String("room-delete")) {
         setStatus(message);
     } else if (op == QLatin1String("device-on")) {
         clearPendingDeviceToggle(true);
@@ -790,6 +822,9 @@ void SessionController::clearLocal()
     const bool hadProfile = !userId_.isEmpty() || !firstName_.isEmpty() || !city_.isEmpty();
     const bool hadWeather = !weatherLine_.isEmpty() || !weatherIconFile_.isEmpty();
     const bool hadRooms = !roomRows_.isEmpty();
+    const QString canceledRoomCreateName = std::exchange(pendingRoomCreateName_, QString());
+    const QString canceledDeviceCreateRoomId = std::exchange(pendingDeviceCreateRoomId_, QString());
+    const QString canceledDeviceCreateName = std::exchange(pendingDeviceCreateName_, QString());
     signedIn_ = false;
     activeRefreshTimer_.stop();
     accessToken_.clear();
@@ -836,6 +871,12 @@ void SessionController::clearLocal()
     }
     if (hadRooms) {
         emit roomsChanged();
+    }
+    if (!canceledRoomCreateName.isEmpty()) {
+        emit roomCreateFailed(canceledRoomCreateName);
+    }
+    if (!canceledDeviceCreateName.isEmpty()) {
+        emit deviceCreateFailed(canceledDeviceCreateRoomId, canceledDeviceCreateName);
     }
 }
 

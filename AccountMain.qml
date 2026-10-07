@@ -17,6 +17,8 @@ Window {
     color: "#18171C"
     property string selectedRoomId: ""
     property bool settingsOpen: false
+    property bool roomCreatePending: false
+    property bool deviceCreatePending: false
     property string actionEntityType: ""
     property string actionEntityId: ""
     property string actionEntityName: ""
@@ -41,6 +43,34 @@ Window {
 
     SessionController {
         id: session
+    }
+
+    Connections {
+        target: session
+
+        function onRoomCreated(name) {
+            root.roomCreatePending = false
+            if (roomNameInput.text.trim() === name) {
+                roomNameInput.clear()
+            }
+        }
+
+        function onRoomCreateFailed() {
+            root.roomCreatePending = false
+        }
+
+        function onDeviceCreated(roomId, name) {
+            root.deviceCreatePending = false
+            if (root.selectedRoom && root.selectedRoom.id === roomId
+                    && createDeviceDialog.visible && deviceNameInput.text.trim() === name) {
+                createDeviceDialog.close()
+                deviceNameInput.clear()
+            }
+        }
+
+        function onDeviceCreateFailed() {
+            root.deviceCreatePending = false
+        }
     }
 
     ColumnLayout {
@@ -308,9 +338,11 @@ Window {
                             Layout.preferredHeight: 46
                             text: qsTr("Add room")
                             Accessible.name: qsTr("Add room")
+                            enabled: !root.roomCreatePending
                             onClicked: {
-                                if (session.createRoom(roomNameInput.text)) {
-                                    roomNameInput.clear()
+                                root.roomCreatePending = true
+                                if (!session.createRoom(roomNameInput.text)) {
+                                    root.roomCreatePending = false
                                 }
                             }
 
@@ -400,6 +432,7 @@ Window {
                         Button {
                             text: qsTr("Add device")
                             Accessible.name: qsTr("Add device")
+                            enabled: !root.deviceCreatePending
                             onClicked: {
                                 deviceNameInput.clear()
                                 deviceKind.currentIndex = 0
@@ -666,7 +699,6 @@ Window {
         width: Math.min(root.width - 32, 360)
         modal: true
         title: qsTr("Add device")
-        standardButtons: Dialog.Save | Dialog.Cancel
 
         contentItem: ColumnLayout {
             spacing: 10
@@ -690,15 +722,41 @@ Window {
                 model: [qsTr("Light"), qsTr("Plug"), qsTr("Thermometer")]
                 Accessible.name: qsTr("Device type")
             }
+
+            Label {
+                Layout.fillWidth: true
+                visible: session.statusMessage.length > 0
+                text: session.statusMessage
+                color: "#FFFFFF"
+                wrapMode: Text.Wrap
+                Accessible.name: qsTr("Create device status")
+            }
         }
 
-        onAccepted: {
-            if (!root.selectedRoom) {
-                return
+        footer: DialogButtonBox {
+            Button {
+                text: root.deviceCreatePending ? qsTr("Saving...") : qsTr("Save")
+                Accessible.name: qsTr("Save device")
+                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+                enabled: !root.deviceCreatePending
+                onClicked: {
+                    if (!root.selectedRoom) {
+                        return
+                    }
+                    var kind = deviceKind.currentIndex === 0 ? "light"
+                        : deviceKind.currentIndex === 1 ? "plug" : "thermometer"
+                    root.deviceCreatePending = true
+                    if (!session.createDevice(root.selectedRoom.id, deviceNameInput.text, kind)) {
+                        root.deviceCreatePending = false
+                    }
+                }
             }
-            var kind = deviceKind.currentIndex === 0 ? "light"
-                : deviceKind.currentIndex === 1 ? "plug" : "thermometer"
-            session.createDevice(root.selectedRoom.id, deviceNameInput.text, kind)
+
+            Button {
+                text: qsTr("Cancel")
+                Accessible.name: qsTr("Cancel adding device")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
         }
     }
 
