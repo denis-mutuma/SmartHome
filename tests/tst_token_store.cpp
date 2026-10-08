@@ -22,6 +22,7 @@ void TokenStoreTest::roundTripAndClear()
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
     const QString path = dir.filePath(QStringLiteral("session.bin"));
+#if defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
     QVERIFY(saveRefreshToken(QStringLiteral("refresh-token-value"), path));
     QCOMPARE(loadRefreshToken(path), QStringLiteral("refresh-token-value"));
 #ifdef Q_OS_ANDROID
@@ -36,6 +37,12 @@ void TokenStoreTest::roundTripAndClear()
     QVERIFY(saveRefreshToken(QStringLiteral("refresh-token-value"), path));
     QVERIFY(saveRefreshToken(QString(), path));
     QVERIFY(!QFile::exists(path));
+#else
+    QVERIFY(!saveRefreshToken(QStringLiteral("refresh-token-value"), path));
+    QVERIFY(!QFile::exists(path));
+    QVERIFY(loadRefreshToken(path).isEmpty());
+    QVERIFY(saveRefreshToken(QString(), path));
+#endif
 }
 
 void TokenStoreTest::missingAndCorrupt()
@@ -65,7 +72,13 @@ void TokenStoreTest::missingAndCorrupt()
     QVERIFY(loadRefreshToken(path).isEmpty());
     QVERIFY(!QFile::exists(path));
 #else
-    QCOMPARE(loadRefreshToken(path), QStringLiteral("not-a-sealed-token"));
+    QVERIFY(loadRefreshToken(path).isEmpty());
+    QVERIFY(!saveRefreshToken(QStringLiteral("refresh-token-value"), path));
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), QByteArrayLiteral("not-a-sealed-token"));
+    file.close();
+    QVERIFY(clearRefreshToken(path));
+    QVERIFY(!QFile::exists(path));
 #endif
 }
 

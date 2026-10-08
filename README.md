@@ -15,6 +15,8 @@ Coding agents use [AGENTS.md](AGENTS.md); explanatory documents are references, 
 
 `config.local.cmake` stays off git. The service role key stays out of the build.
 
+Refresh-token storage is implemented for Windows and Android only. Other platforms cannot establish a session until native secure storage is implemented; see [docs/security.md](docs/security.md).
+
 ## Desktop Presets
 
 [CMakePresets.json](CMakePresets.json) uses Ninja and separate `build/desktop-debug` (tests enabled) and `build/desktop-app` (app only) directories. Configure the chosen preset before building it; keep kit/compiler paths local.
