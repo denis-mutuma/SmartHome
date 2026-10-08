@@ -20,6 +20,7 @@
 
 namespace {
 
+#if defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
 bool writeBytes(const QString& filePath, const QByteArray& bytes)
 {
     const QFileInfo info(filePath);
@@ -35,6 +36,7 @@ bool writeBytes(const QString& filePath, const QByteArray& bytes)
     }
     return file.commit();
 }
+#endif
 
 #ifdef Q_OS_WIN
 QByteArray protect(const QByteArray& plain)
@@ -126,13 +128,13 @@ bool saveRefreshToken(const QString& token, const QString& filePath)
     }
     return writeBytes(filePath, androidTokenPrefix + ciphertext.toLatin1());
 #else
-    const QByteArray plain = token.toUtf8();
-    return writeBytes(filePath, plain);
+    return false;
 #endif
 }
 
 QString loadRefreshToken(const QString& filePath)
 {
+#if defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
         return {};
@@ -163,8 +165,10 @@ QString loadRefreshToken(const QString& filePath)
     }
     clearRefreshToken(filePath);
     return {};
+#endif
 #else
-    return QString::fromUtf8(bytes);
+    Q_UNUSED(filePath);
+    return {};
 #endif
 }
 

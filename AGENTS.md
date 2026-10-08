@@ -24,7 +24,7 @@
 - While auth remains, keep refresh single-flight, authorized retries bounded and transient failures distinct from definitive rejection.
 - Never replay pending requests into a new session after rejection, logout or credential-persistence failure.
 - Keep TLS verification and bounded network timeouts; never log credentials or embed privileged service keys in clients.
-- Keep local configuration untracked and credentials in native secure storage; do not extend the plaintext fallback to new supported platforms.
+- Keep local configuration untracked and credentials in native secure storage; fail closed rather than falling back to plaintext persistence.
 - Validate response shapes, resource identities and affected rows before applying successful mutations.
 - Do not rewrite applied migrations or delete remote data, local builds or backup branches without explicit approval.
 
