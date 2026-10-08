@@ -33,6 +33,7 @@ jobs:
         with:
           version: '6.11.2'
           arch: win64_mingw
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
           tools: tools_mingw1310
           dir: ${{ runner.temp }}
           cache: true
