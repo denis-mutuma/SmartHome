@@ -42,3 +42,7 @@ Build the `appSmartHome_make_apk` target from the Android build directory. The A
 `BUILD_TESTING` defaults to `ON`, enabling the five test executables and requiring Qt Test. Configure with `-DBUILD_TESTING=OFF` to build without test targets or the Qt Test dependency; `appSmartHome_qmllint` remains available.
 
 From the desktop build directory, run `ctest` and the `appSmartHome_qmllint` target.
+
+## CI
+
+[Desktop CI](.github/workflows/desktop.yml) runs on pull requests to `main` and pushes to `main`. It installs Qt 6.11.2 / MinGW 13.1, builds the app and tests, runs QML lint and executes the full test preset on Windows. No backend secrets are required; hosted checks do not validate Android or physical devices.
