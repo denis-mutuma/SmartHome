@@ -24,7 +24,7 @@ Window {
     property string actionEntityName: ""
 
     function roomById(roomId) {
-        for (var index = 0; index < session.rooms.length; ++index) {
+        for (let index = 0; index < session.rooms.length; ++index) {
             if (session.rooms[index].id === roomId) {
                 return session.rooms[index]
             }
@@ -47,6 +47,23 @@ Window {
 
     Connections {
         target: session
+
+        function onSignedInChanged() {
+            passwordInput.clear()
+            root.selectedRoomId = ""
+            root.settingsOpen = false
+            if (!session.signedIn) {
+                root.roomCreatePending = false
+                root.deviceCreatePending = false
+                root.actionEntityType = ""
+                root.actionEntityId = ""
+                root.actionEntityName = ""
+                entityMenu.close()
+                createDeviceDialog.close()
+                renameDialog.close()
+                deleteDialog.close()
+            }
+        }
 
         function onRoomCreated(name) {
             root.roomCreatePending = false
@@ -547,10 +564,7 @@ Window {
                         Button {
                             text: qsTr("Sign out")
                             Accessible.name: qsTr("Sign out")
-                            onClicked: {
-                                root.selectedRoomId = ""
-                                session.signOut()
-                            }
+                            onClicked: session.signOut()
 
                             background: Rectangle {
                                 color: "#2F2F37"
@@ -656,11 +670,7 @@ Window {
                         Layout.preferredHeight: 46
                         text: qsTr("Sign out")
                         Accessible.name: qsTr("Sign out")
-                        onClicked: {
-                            root.settingsOpen = false
-                            root.selectedRoomId = ""
-                            session.signOut()
-                        }
+                        onClicked: session.signOut()
 
                         background: Rectangle {
                             color: "#2F2F37"
