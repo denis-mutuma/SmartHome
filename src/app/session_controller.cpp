@@ -122,6 +122,9 @@ QString SessionController::greeting() const
 
 bool SessionController::signIn(const QString& email, const QString& password)
 {
+    if (signedIn_ || authInFlight_ || refreshInFlight_) {
+        return false;
+    }
     const QString normalizedEmail = email.trimmed().toLower();
     if (!isEmailOk(normalizedEmail)) {
         setStatus(tr("Enter a valid email."));
@@ -131,6 +134,7 @@ bool SessionController::signIn(const QString& email, const QString& password)
         setStatus(tr("Use 8 to 72 characters."));
         return false;
     }
+    authInFlight_ = true;
     setStatus({});
     api_.signIn(normalizedEmail, password);
     return true;
@@ -138,6 +142,9 @@ bool SessionController::signIn(const QString& email, const QString& password)
 
 bool SessionController::registerAccount(const QString& firstName, const QString& email, const QString& password)
 {
+    if (signedIn_ || authInFlight_ || refreshInFlight_) {
+        return false;
+    }
     const QString normalizedName = firstName.trimmed();
     const QString normalizedEmail = email.trimmed().toLower();
     if (!isNameOk(normalizedName)) {
@@ -152,6 +159,7 @@ bool SessionController::registerAccount(const QString& firstName, const QString&
         setStatus(tr("Use 8 to 72 characters."));
         return false;
     }
+    authInFlight_ = true;
     setStatus({});
     api_.signUp(normalizedEmail, password, normalizedName);
     return true;
@@ -701,6 +709,9 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
         return;
     }
     const bool isRefresh = op == QLatin1String("refresh");
+    if (!isRefresh) {
+        authInFlight_ = false;
+    }
     const std::optional<SessionTokens> session = parseSession(body);
     if (!session.has_value()) {
         if (isRefresh) {
@@ -714,7 +725,6 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
     }
     if (isRefresh) {
         refreshInFlight_ = false;
-        refreshRetryPending_ = false;
     }
     applySession(*session, isRefresh);
 }
@@ -733,6 +743,9 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
         return;
     }
     finishTrackedResponse(requestId);
+    if (op == QLatin1String("login") || op == QLatin1String("signup")) {
+        authInFlight_ = false;
+    }
     if (op == QLatin1String("refresh")) {
         refreshInFlight_ = false;
         if (status == 0 || status == 408 || status == 429 || status >= 500) {
@@ -795,7 +808,7 @@ void SessionController::onAuthenticationRequired(const QString&, quint64)
 
 void SessionController::startRefresh()
 {
-    if (refreshInFlight_) {
+    if (refreshInFlight_ || authInFlight_) {
         return;
     }
     if (refreshToken_.isEmpty()) {
@@ -842,6 +855,7 @@ void SessionController::applySession(const SessionTokens& session, bool isRefres
     email_ = session.email;
     api_.setAccessToken(accessToken_);
     signedIn_ = true;
+    refreshRetryPending_ = false;
     if (auto* guiApp = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
         updatePolling(guiApp->applicationState());
     }
@@ -871,6 +885,7 @@ void SessionController::clearLocal()
     const QString canceledDeviceCreateRoomId = std::exchange(pendingDeviceCreateRoomId_, QString());
     const QString canceledDeviceCreateName = std::exchange(pendingDeviceCreateName_, QString());
     signedIn_ = false;
+    authInFlight_ = false;
     activeRefreshTimer_.stop();
     accessToken_.clear();
     refreshToken_.clear();

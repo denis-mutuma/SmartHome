@@ -142,6 +142,10 @@ void ApiClient::sendPendingRequest(quint64 requestId)
     reply->setProperty("requestId", QVariant::fromValue(requestId));
     const quint64 requestGeneration = requestGeneration_;
     connect(reply, &QNetworkReply::finished, this, [this, reply, requestGeneration]() {
+        if (requestGeneration != requestGeneration_) {
+            reply->deleteLater();
+            return;
+        }
         const QString operation = reply->property("op").toString();
         const quint64 requestId = reply->property("requestId").toULongLong();
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
@@ -149,9 +153,6 @@ void ApiClient::sendPendingRequest(quint64 requestId)
         const QNetworkReply::NetworkError error = reply->error();
         const QString errorString = reply->errorString();
         reply->deleteLater();
-        if (requestGeneration != requestGeneration_) {
-            return;
-        }
         if (error != QNetworkReply::NoError && status == 0) {
             discardRequest(requestId);
             emit failed(operation, requestId, status, errorString);
