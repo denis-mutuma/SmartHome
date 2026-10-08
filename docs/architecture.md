@@ -32,6 +32,7 @@ flowchart LR
 - Sign-in and registration are single-flight and do not overlap refresh or an active session; switching accounts requires sign-out. Failure and logout release the guard, and valid session adoption clears obsolete refresh retries.
 - Refresh is single-flight and authorized retries are bounded. Transient refresh failures preserve the session; definitive refresh rejection, malformed refresh success or failure to persist tokens during refresh cancels pending requests and clears local auth state.
 - Request identity, stale-response checks and same-resource serialization protect client state. These protections do not establish live backend authorization or hardware behavior.
+- Rename completion reports a resource key and validated success/failure; wrong returned identities or device parent rooms are rejected before model changes. Dialogs must use this outcome rather than request acceptance to decide when to close.
 
 The five [test suites](../tests) cover rules, parsing, token storage, HTTP contracts and controller lifecycle/mutation behavior. They include deferred-response and retry coverage, but do not validate a live project's access policies or real devices. App and platform versions are derived from the CMake project rather than maintained separately.
 

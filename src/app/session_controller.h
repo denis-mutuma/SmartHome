@@ -61,6 +61,7 @@ public:
     Q_INVOKABLE bool deleteDevice(const QString& deviceId);
 
 signals:
+    void renameFinished(const QString& entityKey, bool success);
     void signedInChanged();
     void emailChanged();
     void profileChanged();

@@ -1095,6 +1095,8 @@ void SessionControllerTest::renamesAndDeletesDevice()
 
     SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
         QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QSignalSpy renamed(&controller, &SessionController::renameFinished);
+    QVERIFY(renamed.isValid());
     QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
     QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
     const QString deviceId = QStringLiteral("123e4567-e89b-12d3-a456-426614174020");
@@ -1115,11 +1117,37 @@ void SessionControllerTest::renamesAndDeletesDevice()
     QVERIFY(controller.renameDevice(deviceId, QStringLiteral("Reading lamp")));
     QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices"))
         .toList().first().toMap().value(QStringLiteral("name")).toString(), QStringLiteral("Reading lamp"), 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(renamed.count(), 2, 5000);
+    QCOMPARE(renamed.last().at(0).toString(), QStringLiteral("device:") + deviceId);
+    QVERIFY(renamed.last().at(1).toBool());
     const qsizetype updateHeaderEnd = firstUpdateRequest.indexOf(QByteArrayLiteral("\r\n\r\n"));
     QVERIFY(firstUpdateRequest.left(updateHeaderEnd).toLower()
         .contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
     QCOMPARE(requestBody(firstUpdateRequest).value(QStringLiteral("name")).toString(),
         QStringLiteral("Desk lamp"));
+
+    state.deferDeviceUpdateResponses = true;
+    for (bool httpFailure : {true, false}) {
+        const QVariantList previousRooms = controller.rooms();
+        const int previousResults = renamed.count();
+        QVERIFY(controller.renameDevice(deviceId, QStringLiteral("Rejected rename")));
+        QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceUpdateResponses.size(), 1, 5000);
+        DeferredResponse response = state.pendingDeviceUpdateResponses.takeFirst();
+        if (httpFailure) {
+            response.status = 500;
+            response.reason = QByteArrayLiteral("Internal Server Error");
+            response.payload = QByteArrayLiteral(R"({"message":"rename rejected"})");
+        } else {
+            QJsonObject row = QJsonDocument::fromJson(response.payload).array().first().toObject();
+            row.insert(QStringLiteral("room_id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174011"));
+            response.payload = QJsonDocument(QJsonArray{row}).toJson(QJsonDocument::Compact);
+        }
+        writeResponse(response);
+        QTRY_COMPARE_WITH_TIMEOUT(renamed.count(), previousResults + 1, 5000);
+        QCOMPARE(renamed.last().at(0).toString(), QStringLiteral("device:") + deviceId);
+        QVERIFY(!renamed.last().at(1).toBool());
+        QCOMPARE(controller.rooms(), previousRooms);
+    }
 
     QVERIFY(!controller.deleteDevice(QStringLiteral("not-a-uuid")));
     QVERIFY(state.deviceDeleteRequest.isEmpty());
@@ -1140,12 +1168,18 @@ void SessionControllerTest::renamesAndDeletesRoom()
     AuthServerState state{sessionResponse()};
     state.roomsBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Desk light","kind":"light","is_on":false,"celsius":null,"reading_at":null,"position":0}]}])");
+    QJsonArray rooms = QJsonDocument::fromJson(state.roomsBody).array();
+    rooms.append(QJsonObject{{QStringLiteral("id"), QStringLiteral("123e4567-e89b-12d3-a456-426614174011")},
+        {QStringLiteral("name"), QStringLiteral("Other room")}, {QStringLiteral("position"), 1}});
+    state.roomsBody = QJsonDocument(rooms).toJson(QJsonDocument::Compact);
     startAuthServer(server, state);
 
     SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
         QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QSignalSpy renamed(&controller, &SessionController::renameFinished);
+    QVERIFY(renamed.isValid());
     QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
-    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 2, 5000);
     const QString roomId = QStringLiteral("123e4567-e89b-12d3-a456-426614174010");
 
     QVERIFY(!controller.renameRoom(roomId, QString()));
@@ -1159,6 +1193,9 @@ void SessionControllerTest::renamesAndDeletesRoom()
     QTRY_COMPARE_WITH_TIMEOUT(state.roomUpdateRequests, 1, 5000);
     QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("name")).toString(),
         QStringLiteral("Lounge"), 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(renamed.count(), 1, 5000);
+    QCOMPARE(renamed.first().at(0).toString(), QStringLiteral("room:") + roomId);
+    QVERIFY(renamed.first().at(1).toBool());
     QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList().size(), 1);
     const qsizetype updateHeaderEnd = state.roomUpdateRequest.indexOf(QByteArrayLiteral("\r\n\r\n"));
     QVERIFY(state.roomUpdateRequest.left(updateHeaderEnd).toLower()
@@ -1175,10 +1212,23 @@ void SessionControllerTest::renamesAndDeletesRoom()
     QCOMPARE(requestBody(state.roomUpdateRequest).value(QStringLiteral("name")).toString(),
         QStringLiteral("Bedroom"));
 
+    for (const QByteArray& response : {QByteArrayLiteral("[]"), QByteArrayLiteral(
+             R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Wrong shape","position":0},{}])"), QByteArrayLiteral(
+             R"([{"id":"123e4567-e89b-12d3-a456-426614174011","name":"Wrong room","position":0}])")}) {
+        state.updatedRoomBody = response;
+        const int previousResults = renamed.count();
+        const QVariantList previousRooms = controller.rooms();
+        QVERIFY(controller.renameRoom(roomId, QStringLiteral("Rejected rename")));
+        QTRY_COMPARE_WITH_TIMEOUT(renamed.count(), previousResults + 1, 5000);
+        QCOMPARE(renamed.last().at(0).toString(), QStringLiteral("room:") + roomId);
+        QVERIFY(!renamed.last().at(1).toBool());
+        QCOMPARE(controller.rooms(), previousRooms);
+    }
+
     QVERIFY(!controller.deleteRoom(QStringLiteral("not-a-uuid")));
     QVERIFY(state.roomDeleteRequest.isEmpty());
     QVERIFY(controller.deleteRoom(roomId));
-    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 0, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
     QVERIFY(state.roomDeleteRequest.startsWith(QByteArrayLiteral("DELETE /rest/v1/rooms?id=eq.")));
     QVERIFY(state.roomDeleteRequest.toLower().contains(
         QByteArrayLiteral("authorization: bearer access-token")));
