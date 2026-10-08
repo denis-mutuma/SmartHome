@@ -33,6 +33,8 @@ struct AuthServerState
     }
 
     QByteArray sessionBody;
+    bool deferAuthResponses = false;
+    QList<DeferredResponse> pendingAuthResponses;
     QByteArray refreshBody;
     QByteArray loginRequest;
     QByteArray signupRequest;
@@ -143,8 +145,14 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
             QList<DeferredResponse>* deferredResponses = nullptr;
             if (path == QByteArrayLiteral("/auth/v1/token?grant_type=password")) {
                 state.loginRequest = *request;
+                if (state.deferAuthResponses) {
+                    deferredResponses = &state.pendingAuthResponses;
+                }
             } else if (path == QByteArrayLiteral("/auth/v1/signup")) {
                 state.signupRequest = *request;
+                if (state.deferAuthResponses) {
+                    deferredResponses = &state.pendingAuthResponses;
+                }
             } else if (path == QByteArrayLiteral("/auth/v1/token?grant_type=refresh_token")) {
                 ++state.refreshRequests;
                 state.refreshRequest = *request;
@@ -369,6 +377,7 @@ class SessionControllerTest : public QObject
     Q_OBJECT
 
 private slots:
+    void serializesAuthenticationAndRecoversAfterCancellation();
     void signInPersistsRefreshTokenAndSignOutClearsIt();
     void registerSendsNormalizedAccountDetails();
     void rejectsInvalidCredentials();
@@ -397,6 +406,52 @@ private slots:
     void ignoresOlderWeatherForecastResponse();
     void ignoresWeatherResponseAfterCityCleared();
 };
+
+void SessionControllerTest::serializesAuthenticationAndRecoversAfterCancellation()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.deferAuthResponses = true;
+    startAuthServer(server, state);
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    const QString email = QStringLiteral("person@example.com");
+    const QString password = QStringLiteral("correct-horse");
+    QVERIFY(controller.signIn(email, password));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingAuthResponses.size(), 1, 5000);
+    QVERIFY(!controller.signIn(email, password));
+    QVERIFY(!controller.registerAccount(QStringLiteral("Amina"), email, password));
+    DeferredResponse rejected = state.pendingAuthResponses.takeFirst();
+    rejected.status = 400;
+    rejected.reason = QByteArrayLiteral("Bad Request");
+    rejected.payload = QByteArrayLiteral(R"({"message":"login rejected"})");
+    writeResponse(rejected);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.statusMessage(), QStringLiteral("login rejected"), 5000);
+    bool reentered = false;
+    const auto statusConnection = connect(&controller, &SessionController::statusChanged, &controller, [&]() {
+        if (controller.statusMessage().isEmpty()) {
+            reentered = true;
+            QVERIFY(!controller.signIn(email, password));
+            QVERIFY(!controller.registerAccount(QStringLiteral("Amina"), email, password));
+        }
+    });
+    QVERIFY(controller.registerAccount(QStringLiteral("Amina"), email, password));
+    QVERIFY(reentered);
+    disconnect(statusConnection);
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingAuthResponses.size(), 1, 5000);
+    QVERIFY(!controller.signIn(email, password));
+    QVERIFY(!controller.registerAccount(QStringLiteral("Amina"), email, password));
+    controller.signOut();
+    QVERIFY(controller.signIn(email, password));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingAuthResponses.size(), 2, 5000);
+    writeResponse(state.pendingAuthResponses.takeLast());
+    QTRY_VERIFY_WITH_TIMEOUT(controller.signedIn(), 5000);
+    QVERIFY(!controller.signIn(email, password));
+    QVERIFY(!controller.registerAccount(QStringLiteral("Amina"), email, password));
+}
 
 void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
 {

@@ -114,6 +114,7 @@ private:
     QString pendingDeviceCreateName_;
     QString statusMessage_;
     bool signedIn_ = false;
+    bool authInFlight_ = false;
     bool refreshInFlight_ = false;
     bool refreshRetryPending_ = false;
     QTimer refreshTimer_;
