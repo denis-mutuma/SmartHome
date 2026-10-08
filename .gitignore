@@ -74,6 +74,7 @@ CMakeLists.txt.user*
 
 build/
 config.local.cmake
+CMakeUserPresets.json
 session.bin
 .supabase/
 .qmlls.ini
