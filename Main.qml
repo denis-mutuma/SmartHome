@@ -88,6 +88,19 @@ Window {
         function onDeviceCreateFailed() {
             root.deviceCreatePending = false
         }
+
+        function onRenameFinished(entityKey, success) {
+            if (entityKey !== renameDialog.pendingKey) {
+                return
+            }
+            renameDialog.pendingKey = ""
+            if (success) {
+                renameDialog.close()
+                renameInput.clear()
+            } else {
+                renameDialog.errorMessage = session.statusMessage
+            }
+        }
     }
 
     ColumnLayout {
@@ -772,29 +785,67 @@ Window {
 
     Dialog {
         id: renameDialog
+        property string pendingKey: ""
+        property string errorMessage: ""
         anchors.centerIn: Overlay.overlay
         width: Math.min(root.width - 32, 360)
         modal: true
         title: root.actionEntityType === "room" ? qsTr("Rename room") : qsTr("Rename device")
-        standardButtons: Dialog.Save | Dialog.Cancel
+        closePolicy: pendingKey.length > 0 ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onClosed: { pendingKey = ""; errorMessage = "" }
 
-        contentItem: TextField {
-            id: renameInput
-            placeholderText: root.actionEntityType === "room" ? qsTr("Room name") : qsTr("Device name")
-            Accessible.name: placeholderText
-            color: "#FFFFFF"
+        contentItem: ColumnLayout {
+            TextField {
+                id: renameInput
+                Layout.fillWidth: true
+                enabled: renameDialog.pendingKey.length === 0
+                onAccepted: renameSave.clicked()
+                placeholderText: root.actionEntityType === "room" ? qsTr("Room name") : qsTr("Device name")
+                Accessible.name: placeholderText
+                color: "#FFFFFF"
 
-            background: Rectangle {
-                color: "#2F2F37"
-                radius: 4
+                background: Rectangle {
+                    color: "#2F2F37"
+                    radius: 4
+                }
+            }
+            Label {
+                Layout.fillWidth: true
+                visible: renameDialog.errorMessage.length > 0
+                text: renameDialog.errorMessage
+                color: "#FFFFFF"
+                wrapMode: Text.Wrap
+                Accessible.name: qsTr("Rename status")
             }
         }
 
-        onAccepted: {
-            if (root.actionEntityType === "room") {
-                session.renameRoom(root.actionEntityId, renameInput.text)
-            } else {
-                session.renameDevice(root.actionEntityId, renameInput.text)
+        footer: DialogButtonBox {
+            Button {
+                id: renameSave
+                text: renameDialog.pendingKey.length > 0 ? qsTr("Saving...") : qsTr("Save")
+                Accessible.name: qsTr("Save name")
+                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+                enabled: renameDialog.pendingKey.length === 0
+                onClicked: {
+                    if (renameDialog.pendingKey.length > 0) {
+                        return
+                    }
+                    renameDialog.pendingKey = root.actionEntityType + ":" + root.actionEntityId
+                    renameDialog.errorMessage = ""
+                    const accepted = root.actionEntityType === "room"
+                        ? session.renameRoom(root.actionEntityId, renameInput.text)
+                        : session.renameDevice(root.actionEntityId, renameInput.text)
+                    if (!accepted) {
+                        renameDialog.pendingKey = ""
+                        renameDialog.errorMessage = session.statusMessage
+                    }
+                }
+            }
+            Button {
+                text: qsTr("Cancel")
+                Accessible.name: qsTr("Cancel rename")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                enabled: renameDialog.pendingKey.length === 0
             }
         }
     }

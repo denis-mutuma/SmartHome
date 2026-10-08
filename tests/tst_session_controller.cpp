@@ -393,6 +393,11 @@ class SessionControllerTest : public QObject
     Q_OBJECT
 
 private slots:
+    void initTestCase() {
+        qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+        qmlRegisterType<UiSessionController>("SmartHome", 1, 0, "SessionController");
+    }
+    void uiRenameWaitsForValidatedSuccess();
     void uiClearsCredentialsAndResetsOnSessionEnd();
     void serializesAuthenticationAndRecoversAfterCancellation();
     void signInPersistsRefreshTokenAndSignOutClearsIt();
@@ -434,8 +439,6 @@ void SessionControllerTest::uiClearsCredentialsAndResetsOnSessionEnd()
     startAuthServer(server, state);
     uiServiceUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
     uiTokenPath = directory.filePath(QStringLiteral("session.bin"));
-    qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
-    qmlRegisterType<UiSessionController>("SmartHome", 1, 0, "SessionController");
     QQmlEngine engine;
     QQmlComponent component(&engine, QUrl::fromLocalFile(QFINDTESTDATA("../Main.qml")));
     QVERIFY2(component.isReady(), qPrintable(component.errorString()));
@@ -476,6 +479,66 @@ void SessionControllerTest::uiClearsCredentialsAndResetsOnSessionEnd()
         QVERIFY(window->property("actionEntityId").toString().isEmpty());
         QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
     }
+}
+
+void SessionControllerTest::uiRenameWaitsForValidatedSuccess()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.roomsBody = roomResponse(QStringLiteral("Desk light"));
+    state.deferDeviceUpdateResponses = true;
+    startAuthServer(server, state);
+    uiServiceUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+    uiTokenPath = directory.filePath(QStringLiteral("session.bin"));
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QFINDTESTDATA("../Main.qml")));
+    std::unique_ptr<QObject> window(component.create());
+    QVERIFY2(window, qPrintable(component.errorString()));
+    QQmlContext* context = qmlContext(window.get());
+    auto* controller = qobject_cast<SessionController*>(context->objectForName(QStringLiteral("session")));
+    QVERIFY(controller->signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller->rooms().size(), 1, 5000);
+    window->setProperty("actionEntityType", QStringLiteral("device"));
+    window->setProperty("actionEntityId", QStringLiteral("123e4567-e89b-12d3-a456-426614174020"));
+    QObject* dialog = context->objectForName(QStringLiteral("renameDialog"));
+    QObject* input = context->objectForName(QStringLiteral("renameInput"));
+    QObject* save = context->objectForName(QStringLiteral("renameSave"));
+    QVERIFY(dialog && input && save);
+    input->setProperty("text", QStringLiteral("New light"));
+    QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+    QVERIFY(QMetaObject::invokeMethod(save, "clicked"));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceUpdateResponses.size(), 1, 5000);
+    QVERIFY(dialog->property("visible").toBool());
+    QVERIFY(!save->property("enabled").toBool());
+    QVERIFY(QMetaObject::invokeMethod(save, "clicked"));
+    QCOMPARE(state.deviceUpdateRequests, 1);
+    controller->renameFinished(QStringLiteral("room:unrelated"), true);
+    QVERIFY(dialog->property("visible").toBool());
+    DeferredResponse failed = state.pendingDeviceUpdateResponses.takeFirst();
+    failed.status = 500;
+    failed.payload = QByteArrayLiteral(R"({"message":"rename rejected"})");
+    writeResponse(failed);
+    QTRY_COMPARE_WITH_TIMEOUT(dialog->property("errorMessage").toString(), QStringLiteral("rename rejected"), 5000);
+    QVERIFY(dialog->property("visible").toBool());
+    QCOMPARE(input->property("text").toString(), QStringLiteral("New light"));
+    QVERIFY(QMetaObject::invokeMethod(save, "clicked"));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceUpdateResponses.size(), 1, 5000);
+    writeResponse(state.pendingDeviceUpdateResponses.takeFirst());
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
+    QVERIFY(input->property("text").toString().isEmpty());
+    QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+    QVERIFY(QMetaObject::invokeMethod(save, "clicked"));
+    QVERIFY(dialog->property("pendingKey").toString().isEmpty());
+    QVERIFY(!dialog->property("errorMessage").toString().isEmpty());
+    input->setProperty("text", QStringLiteral("Pending rename"));
+    QVERIFY(QMetaObject::invokeMethod(save, "clicked"));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceUpdateResponses.size(), 1, 5000);
+    controller->signOut();
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
+    QVERIFY(dialog->property("pendingKey").toString().isEmpty());
 }
 
 void SessionControllerTest::serializesAuthenticationAndRecoversAfterCancellation()
