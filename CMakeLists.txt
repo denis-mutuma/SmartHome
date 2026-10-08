@@ -72,7 +72,7 @@ if(BUILD_TESTING)
         src/app/session_controller.cpp
         src/app/session_controller.h
     )
-    target_link_libraries(tst_session_controller PRIVATE smarthome_core Qt6::Test Qt6::Gui)
+    target_link_libraries(tst_session_controller PRIVATE smarthome_core Qt6::Test Qt6::Quick)
     target_compile_definitions(tst_session_controller PRIVATE
         "SMARTHOME_SUPABASE_URL=\"${SMARTHOME_SUPABASE_URL}\""
         "SMARTHOME_SUPABASE_ANON_KEY=\"${SMARTHOME_SUPABASE_ANON_KEY}\"")

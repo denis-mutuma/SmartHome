@@ -6,6 +6,9 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QQmlComponent>
+#include <QQmlContext>
+#include <QQmlEngine>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -16,6 +19,19 @@
 #include <utility>
 
 namespace {
+
+QString uiServiceUrl;
+QString uiTokenPath;
+
+class UiSessionController : public SessionController
+{
+    Q_OBJECT
+public:
+    explicit UiSessionController(QObject* parent = nullptr)
+        : SessionController(uiServiceUrl, QStringLiteral("public-anon-key"), uiTokenPath, parent)
+    {
+    }
+};
 
 struct DeferredResponse
 {
@@ -377,6 +393,7 @@ class SessionControllerTest : public QObject
     Q_OBJECT
 
 private slots:
+    void uiClearsCredentialsAndResetsOnSessionEnd();
     void serializesAuthenticationAndRecoversAfterCancellation();
     void signInPersistsRefreshTokenAndSignOutClearsIt();
     void registerSendsNormalizedAccountDetails();
@@ -406,6 +423,60 @@ private slots:
     void ignoresOlderWeatherForecastResponse();
     void ignoresWeatherResponseAfterCityCleared();
 };
+
+void SessionControllerTest::uiClearsCredentialsAndResetsOnSessionEnd()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    startAuthServer(server, state);
+    uiServiceUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+    uiTokenPath = directory.filePath(QStringLiteral("session.bin"));
+    qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+    qmlRegisterType<UiSessionController>("SmartHome", 1, 0, "SessionController");
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QFINDTESTDATA("../Main.qml")));
+    QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+    std::unique_ptr<QObject> window(component.create());
+    QVERIFY(window);
+    QQmlContext* context = qmlContext(window.get());
+    auto* controller = qobject_cast<SessionController*>(context->objectForName(QStringLiteral("session")));
+    QObject* password = context->objectForName(QStringLiteral("passwordInput"));
+    QVERIFY(controller);
+    QVERIFY(password);
+    for (bool rejectRefresh : {false, true}) {
+        QVERIFY(password->setProperty("text", QStringLiteral("correct-horse")));
+        QVERIFY(!controller->signIn(QStringLiteral("invalid"), QStringLiteral("correct-horse")));
+        QCOMPARE(password->property("text").toString(), QStringLiteral("correct-horse"));
+        QVERIFY(controller->signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+        QTRY_VERIFY_WITH_TIMEOUT(controller->signedIn(), 5000);
+        QVERIFY(password->property("text").toString().isEmpty());
+        QVERIFY(window->setProperty("selectedRoomId", QStringLiteral("old-room")));
+        QVERIFY(window->setProperty("settingsOpen", true));
+        QVERIFY(window->setProperty("roomCreatePending", true));
+        QVERIFY(window->setProperty("deviceCreatePending", true));
+        QVERIFY(window->setProperty("actionEntityId", QStringLiteral("old-device")));
+        QObject* dialog = context->objectForName(QStringLiteral("renameDialog"));
+        QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+        QTRY_VERIFY_WITH_TIMEOUT(dialog->property("visible").toBool(), 5000);
+        if (rejectRefresh) {
+            state.profileUnauthorizedResponses = 1;
+            state.refreshStatus = 401;
+            controller->reload();
+        } else {
+            controller->signOut();
+        }
+        QTRY_VERIFY_WITH_TIMEOUT(!controller->signedIn(), 5000);
+        QVERIFY(window->property("selectedRoomId").toString().isEmpty());
+        QVERIFY(!window->property("settingsOpen").toBool());
+        QVERIFY(!window->property("roomCreatePending").toBool());
+        QVERIFY(!window->property("deviceCreatePending").toBool());
+        QVERIFY(window->property("actionEntityId").toString().isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
+    }
+}
 
 void SessionControllerTest::serializesAuthenticationAndRecoversAfterCancellation()
 {
