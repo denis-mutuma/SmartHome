@@ -8,7 +8,17 @@ The approved goal is a Qt/QML and C++ client for one person controlling real dev
 
 There should be no recurring cloud subscription. Equipment, an always-on host, power, distribution and licensing may still have costs. Free service quotas are not an availability guarantee.
 
-Hardware, protocols, backend and account model have not been selected. The current prototype does not establish those choices or prove a working hardware integration.
+The current prototype does not prove a working hardware integration or production backend. An evaluation direction has been selected; it remains subject to the validation gates below.
+
+## Evaluation Direction
+
+- Build firmware in a separate public repository using Zephyr. The ESP32-C6-DevKitC-1 is the first evaluation board, not the sole target. Keep application logic on Zephyr APIs and isolate board-specific radio, pins, flash layout and key storage. A second-board build is required before claiming hardware portability.
+- Evaluate Azure IoT Hub Free (F1) in East US. Check live regional availability, account eligibility, quotas and charges for every related resource before provisioning. F1 is an evaluation tier, not a production commitment or guarantee of zero recurring cost.
+- For the native app, evaluate a public Entra client using Qt NetworkAuth authorization-code flow with PKCE and the system browser. The intended test principal is the user's personal Microsoft account as a guest/member in the resource tenant, with hub-scoped IoT Hub Data Contributor access. Validate tenant membership, role, token audience/API calls, and Windows/Android redirects before integration. Do not embed a client secret or shared service key.
+- For device connectivity, evaluate Zephyr MQTT 3.1.1 over TLS on outbound port 8883. Prove ISP reachability and the pinned Zephyr/Espressif radio-blob build and licensing. Zephyr's documented MQTT support does not establish a built-in WebSocket/443 fallback; if 8883 is blocked, stop and reassess rather than assume one.
+- Provision the first device over USB. Verify Zephyr secure-storage key-provider behavior on the C6 before storing credentials or considering the separately gated, irreversible HMAC/eFuse operation. Do not enable production fuse lockdown or claim secure-at-rest behavior without device evidence.
+- The board starts outputs OFF. During cloud loss, retain the current low-voltage demo output and reject new commands; never queue commands for later replay. Distinguish service acceptance, device response, reported GPIO state and physical/contact confirmation. Never use mains in the bench proof.
+- Use the DS18B20 as the first real sensor; DHT11 humidity is optional. Report source, units, observation time and validity. Client-generated temperatures remain prototype-only and must never be presented as telemetry.
 
 ## Current Prototype
 
@@ -38,7 +48,7 @@ The five [test suites](../tests) cover rules, parsing, token storage, HTTP contr
 
 ## Integration Options
 
-No option has been selected or given preference. The comparison depends on representative devices, remote reachability and operating ownership, not on the prototype's vendor choices.
+Azure IoT Hub F1 East US is the selected evaluation candidate, not a production decision. If its availability, cost, account or device-network gates fail, compare the alternatives against representative devices, remote reachability and operating ownership rather than defaulting to the prototype's vendor choices.
 
 | Option | Potential simplification | Evidence needed |
 | --- | --- | --- |
@@ -63,4 +73,4 @@ The UI separates command acceptance, device-reported state and physical confirma
 3. Verify telemetry provenance and freshness, and reconcile an authoritative snapshot after reconnect. A service acknowledgement or mock test cannot prove physical action.
 4. Obtain approval for the integration, account model, remote-access route and feature retirements before replacing production paths or designing new persistence.
 
-Until that evidence exists, the hardware/backend decision remains open. Existing workflows and applied migration history are preserved; disposable prototype data is not permission to delete remote resources or local builds.
+The evaluation direction does not authorize cloud provisioning, device wiring/flashing, irreversible fuse operations, production backend replacement or deletion of existing workflows. Those actions remain gated on their stated evidence and explicit approval. Existing workflows and applied migration history are preserved; disposable prototype data is not permission to delete remote resources or local builds.
