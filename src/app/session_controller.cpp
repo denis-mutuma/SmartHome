@@ -15,6 +15,7 @@
 #include <QVariantMap>
 
 #include <algorithm>
+#include <numeric>
 #include <utility>
 
 SessionController::SessionController(QObject* parent)
@@ -546,26 +547,32 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
     }
     if (op == QLatin1String("room-delete")) {
         const QJsonDocument response = QJsonDocument::fromJson(body);
-        if (!response.isArray() || response.array().isEmpty() || !response.array().first().isObject()) {
+        const QJsonArray rows = response.array();
+        const QString requestedRoomId = entityKey.startsWith(QStringLiteral("room:"))
+            ? entityKey.mid(QStringLiteral("room:").size()) : QString();
+        if (!response.isArray() || rows.size() != 1 || !rows.first().isObject()) {
             setStatus(tr("The service could not complete the request."));
+            emit deleteFinished(entityKey, false);
             return;
         }
-        const QJsonValue idValue = response.array().first().toObject().value(QStringLiteral("id"));
-        if (!idValue.isString() || !isUuid(idValue.toString())) {
+        const QJsonValue idValue = rows.first().toObject().value(QStringLiteral("id"));
+        if (!isUuid(requestedRoomId) || !idValue.isString() || idValue.toString() != requestedRoomId) {
             setStatus(tr("The service could not complete the request."));
+            emit deleteFinished(entityKey, false);
             return;
         }
-        const QString deletedId = idValue.toString();
-        const auto room = std::find_if(roomRows_.begin(), roomRows_.end(), [&deletedId](const RoomRow& row) {
-            return row.id == deletedId;
+        const auto room = std::find_if(roomRows_.begin(), roomRows_.end(), [&requestedRoomId](const RoomRow& row) {
+            return row.id == requestedRoomId;
         });
         if (room == roomRows_.end()) {
             setStatus(tr("The service could not complete the request."));
+            emit deleteFinished(entityKey, false);
             return;
         }
         roomRows_.erase(room);
         emit roomsChanged();
         setStatus({});
+        emit deleteFinished(entityKey, true);
         return;
     }
     if (op == QLatin1String("device-insert")) {
@@ -622,28 +629,45 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
     }
     if (op == QLatin1String("device-delete")) {
         const QJsonDocument response = QJsonDocument::fromJson(body);
-        if (!response.isArray() || response.array().isEmpty() || !response.array().first().isObject()) {
+        const QJsonArray rows = response.array();
+        const QString requestedDeviceId = entityKey.startsWith(QStringLiteral("device:"))
+            ? entityKey.mid(QStringLiteral("device:").size()) : QString();
+        if (!response.isArray() || rows.size() != 1 || !rows.first().isObject()) {
             setStatus(tr("The service could not complete the request."));
+            emit deleteFinished(entityKey, false);
             return;
         }
-        const QJsonValue idValue = response.array().first().toObject().value(QStringLiteral("id"));
-        if (!idValue.isString() || !isUuid(idValue.toString())) {
+        const QJsonObject deletedRow = rows.first().toObject();
+        const QJsonValue idValue = deletedRow.value(QStringLiteral("id"));
+        const QJsonValue roomIdValue = deletedRow.value(QStringLiteral("room_id"));
+        if (!isUuid(requestedDeviceId) || !idValue.isString() || idValue.toString() != requestedDeviceId
+            || !roomIdValue.isString() || !isUuid(roomIdValue.toString())) {
             setStatus(tr("The service could not complete the request."));
+            emit deleteFinished(entityKey, false);
             return;
         }
-        const QString deletedId = idValue.toString();
-        for (RoomRow& room : roomRows_) {
-            const auto device = std::find_if(room.devices.begin(), room.devices.end(), [&deletedId](const DeviceRow& row) {
-                return row.id == deletedId;
+        const QString deletedRoomId = roomIdValue.toString();
+        const auto room = std::find_if(roomRows_.begin(), roomRows_.end(),
+            [&requestedDeviceId, &deletedRoomId](const RoomRow& row) {
+                return row.id == deletedRoomId && std::any_of(row.devices.cbegin(), row.devices.cend(),
+                    [&requestedDeviceId](const DeviceRow& device) { return device.id == requestedDeviceId; });
             });
-            if (device != room.devices.end()) {
-                room.devices.erase(device);
-                emit roomsChanged();
-                setStatus({});
-                return;
-            }
+        const qsizetype matchingDeviceCount = std::accumulate(roomRows_.cbegin(), roomRows_.cend(), qsizetype(0),
+            [&requestedDeviceId](qsizetype count, const RoomRow& row) {
+                return count + std::count_if(row.devices.cbegin(), row.devices.cend(),
+                    [&requestedDeviceId](const DeviceRow& device) { return device.id == requestedDeviceId; });
+            });
+        if (room == roomRows_.end() || matchingDeviceCount != 1) {
+            setStatus(tr("The service could not complete the request."));
+            emit deleteFinished(entityKey, false);
+            return;
         }
-        setStatus(tr("The service could not complete the request."));
+        const auto device = std::find_if(room->devices.begin(), room->devices.end(),
+            [&requestedDeviceId](const DeviceRow& row) { return row.id == requestedDeviceId; });
+        room->devices.erase(device);
+        emit roomsChanged();
+        setStatus({});
+        emit deleteFinished(entityKey, true);
         return;
     }
     if (op == QLatin1String("device-on")) {
@@ -784,6 +808,8 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
         setStatus(message);
         if (op == QLatin1String("room-update")) {
             emit renameFinished(entityKey, false);
+        } else if (op == QLatin1String("room-delete")) {
+            emit deleteFinished(entityKey, false);
         }
     } else if (op == QLatin1String("device-on")) {
         if (entityKey.startsWith(QStringLiteral("device:"))) {
@@ -813,6 +839,8 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
         setStatus(message);
         if (op == QLatin1String("device-update")) {
             emit renameFinished(entityKey, false);
+        } else {
+            emit deleteFinished(entityKey, false);
         }
     }
 }

@@ -62,6 +62,7 @@ public:
 
 signals:
     void renameFinished(const QString& entityKey, bool success);
+    void deleteFinished(const QString& entityKey, bool success);
     void signedInChanged();
     void emailChanged();
     void profileChanged();
