@@ -101,6 +101,18 @@ Window {
                 renameDialog.errorMessage = session.statusMessage
             }
         }
+
+        function onDeleteFinished(entityKey, success) {
+            if (entityKey !== deleteDialog.pendingKey) {
+                return
+            }
+            deleteDialog.pendingKey = ""
+            if (success) {
+                deleteDialog.close()
+            } else {
+                deleteDialog.errorMessage = session.statusMessage
+            }
+        }
     }
 
     ColumnLayout {
@@ -852,25 +864,67 @@ Window {
 
     Dialog {
         id: deleteDialog
+        property string pendingKey: ""
+        property string errorMessage: ""
         anchors.centerIn: Overlay.overlay
         width: Math.min(root.width - 32, 360)
         modal: true
         title: qsTr("Delete %1?").arg(root.actionEntityType === "room" ? qsTr("room") : qsTr("device"))
-        standardButtons: Dialog.Yes | Dialog.Cancel
+        closePolicy: pendingKey.length > 0 ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onClosed: { pendingKey = ""; errorMessage = "" }
 
-        contentItem: Label {
-            text: root.actionEntityType === "room"
-                ? qsTr("Delete %1 and its devices?").arg(root.actionEntityName)
-                : qsTr("Delete %1?").arg(root.actionEntityName)
-            color: "#FFFFFF"
-            wrapMode: Text.Wrap
+        contentItem: ColumnLayout {
+            spacing: 10
+
+            Label {
+                Layout.fillWidth: true
+                text: root.actionEntityType === "room"
+                    ? qsTr("Delete %1 and its devices?").arg(root.actionEntityName)
+                    : qsTr("Delete %1?").arg(root.actionEntityName)
+                color: "#FFFFFF"
+                wrapMode: Text.Wrap
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: deleteDialog.errorMessage.length > 0
+                text: deleteDialog.errorMessage
+                color: "#FFFFFF"
+                wrapMode: Text.Wrap
+                Accessible.name: qsTr("Delete status")
+            }
         }
 
-        onAccepted: {
-            if (root.actionEntityType === "room") {
-                session.deleteRoom(root.actionEntityId)
-            } else {
-                session.deleteDevice(root.actionEntityId)
+        footer: DialogButtonBox {
+            Button {
+                id: deleteConfirm
+                text: deleteDialog.pendingKey.length > 0 ? qsTr("Deleting...") : qsTr("Delete")
+                Accessible.name: qsTr("Confirm delete")
+                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole
+                enabled: deleteDialog.pendingKey.length === 0
+                onClicked: {
+                    if (deleteDialog.pendingKey.length > 0
+                            || (root.actionEntityType !== "room" && root.actionEntityType !== "device")) {
+                        return
+                    }
+                    deleteDialog.pendingKey = root.actionEntityType + ":" + root.actionEntityId
+                    deleteDialog.errorMessage = ""
+                    const accepted = root.actionEntityType === "room"
+                        ? session.deleteRoom(root.actionEntityId)
+                        : session.deleteDevice(root.actionEntityId)
+                    if (!accepted) {
+                        deleteDialog.pendingKey = ""
+                        deleteDialog.errorMessage = session.statusMessage
+                    }
+                }
+            }
+
+            Button {
+                id: deleteCancel
+                text: qsTr("Cancel")
+                Accessible.name: qsTr("Cancel delete")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+                enabled: deleteDialog.pendingKey.length === 0
             }
         }
     }
