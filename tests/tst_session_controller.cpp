@@ -76,6 +76,7 @@ struct AuthServerState
     QByteArray deviceReadingRequest;
     QByteArray deviceUpdateRequest;
     QByteArray deviceDeleteRequest;
+    int deviceDeleteRequests = 0;
     QByteArray deviceDeleteBody = QByteArrayLiteral(
         R"([{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010"}])");
     bool deferDeviceDeleteResponses = false;
@@ -295,6 +296,7 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                     }
                 }
             } else if (requestLine.startsWith(QByteArrayLiteral("DELETE /rest/v1/devices?id=eq."))) {
+                ++state.deviceDeleteRequests;
                 state.deviceDeleteRequest = *request;
                 payload = state.deviceDeleteBody;
                 if (state.deferDeviceDeleteResponses) {
@@ -412,6 +414,7 @@ private slots:
         qmlRegisterType<UiSessionController>("SmartHome", 1, 0, "SessionController");
     }
     void uiRenameWaitsForValidatedSuccess();
+    void uiDeleteWaitsForValidatedSuccess();
     void uiClearsCredentialsAndResetsOnSessionEnd();
     void serializesAuthenticationAndRecoversAfterCancellation();
     void signInPersistsRefreshTokenAndSignOutClearsIt();
@@ -553,6 +556,104 @@ void SessionControllerTest::uiRenameWaitsForValidatedSuccess()
     controller->signOut();
     QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
     QVERIFY(dialog->property("pendingKey").toString().isEmpty());
+}
+
+void SessionControllerTest::uiDeleteWaitsForValidatedSuccess()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.roomsBody = roomResponse(QStringLiteral("Desk light"));
+    state.deferDeviceDeleteResponses = true;
+    startAuthServer(server, state);
+    uiServiceUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+    uiTokenPath = directory.filePath(QStringLiteral("session.bin"));
+    QQmlEngine engine;
+    QQmlComponent component(&engine, QUrl::fromLocalFile(QFINDTESTDATA("../Main.qml")));
+    std::unique_ptr<QObject> window(component.create());
+    QVERIFY2(window, qPrintable(component.errorString()));
+    QQmlContext* context = qmlContext(window.get());
+    auto* controller = qobject_cast<SessionController*>(context->objectForName(QStringLiteral("session")));
+    QVERIFY(controller->signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller->rooms().size(), 1, 5000);
+    window->setProperty("actionEntityType", QStringLiteral("device"));
+    window->setProperty("actionEntityId", QStringLiteral("not-a-uuid"));
+    window->setProperty("actionEntityName", QStringLiteral("Desk light"));
+    QObject* dialog = context->objectForName(QStringLiteral("deleteDialog"));
+    QObject* confirm = context->objectForName(QStringLiteral("deleteConfirm"));
+    QObject* cancel = context->objectForName(QStringLiteral("deleteCancel"));
+    QVERIFY(dialog && confirm && cancel);
+    QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+    QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+    QVERIFY(dialog->property("pendingKey").toString().isEmpty());
+    QVERIFY(!dialog->property("errorMessage").toString().isEmpty());
+    QVERIFY(dialog->property("visible").toBool());
+    QCOMPARE(state.deviceDeleteRequests, 0);
+    QVERIFY(QMetaObject::invokeMethod(dialog, "close"));
+
+    window->setProperty("actionEntityId", QStringLiteral("123e4567-e89b-12d3-a456-426614174020"));
+    QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+    QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceDeleteResponses.size(), 1, 5000);
+    QCOMPARE(dialog->property("pendingKey").toString(), QStringLiteral("device:123e4567-e89b-12d3-a456-426614174020"));
+    QVERIFY(dialog->property("visible").toBool());
+    QVERIFY(!confirm->property("enabled").toBool());
+    QVERIFY(!cancel->property("enabled").toBool());
+    QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+    QCOMPARE(state.deviceDeleteRequests, 1);
+    controller->deleteFinished(QStringLiteral("device:unrelated"), true);
+    QVERIFY(dialog->property("visible").toBool());
+    QCOMPARE(dialog->property("pendingKey").toString(), QStringLiteral("device:123e4567-e89b-12d3-a456-426614174020"));
+
+    DeferredResponse failed = state.pendingDeviceDeleteResponses.takeFirst();
+    failed.status = 500;
+    failed.reason = QByteArrayLiteral("Internal Server Error");
+    failed.payload = QByteArrayLiteral(R"({"message":"delete rejected"})");
+    writeResponse(failed);
+    QTRY_COMPARE_WITH_TIMEOUT(dialog->property("errorMessage").toString(), QStringLiteral("delete rejected"), 5000);
+    QVERIFY(dialog->property("visible").toBool());
+    QVERIFY(dialog->property("pendingKey").toString().isEmpty());
+    QVERIFY(confirm->property("enabled").toBool());
+    QVERIFY(cancel->property("enabled").toBool());
+
+    QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceDeleteResponses.size(), 1, 5000);
+    QCOMPARE(state.deviceDeleteRequests, 2);
+    writeResponse(state.pendingDeviceDeleteResponses.takeFirst());
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
+    QVERIFY(dialog->property("pendingKey").toString().isEmpty());
+    QVERIFY(dialog->property("errorMessage").toString().isEmpty());
+
+    controller->reload();
+    QTRY_COMPARE_WITH_TIMEOUT(controller->rooms().first().toMap().value(QStringLiteral("devices")).toList().size(),
+        1, 5000);
+    state.deferRoomDeleteResponses = true;
+    window->setProperty("actionEntityType", QStringLiteral("room"));
+    window->setProperty("actionEntityId", QStringLiteral("123e4567-e89b-12d3-a456-426614174010"));
+    window->setProperty("actionEntityName", QStringLiteral("Living room"));
+    QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+    QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingRoomDeleteResponses.size(), 1, 5000);
+    QCOMPARE(dialog->property("pendingKey").toString(), QStringLiteral("room:123e4567-e89b-12d3-a456-426614174010"));
+    QVERIFY(state.roomDeleteRequest.startsWith(QByteArrayLiteral("DELETE /rest/v1/rooms?id=eq.")));
+    writeResponse(state.pendingRoomDeleteResponses.takeFirst());
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
+    QCOMPARE(controller->rooms().size(), 0);
+
+    controller->reload();
+    QTRY_COMPARE_WITH_TIMEOUT(controller->rooms().size(), 1, 5000);
+    state.deferRoomDeleteResponses = false;
+    window->setProperty("actionEntityType", QStringLiteral("device"));
+    window->setProperty("actionEntityId", QStringLiteral("123e4567-e89b-12d3-a456-426614174020"));
+    QVERIFY(QMetaObject::invokeMethod(dialog, "open"));
+    QVERIFY(QMetaObject::invokeMethod(confirm, "clicked"));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceDeleteResponses.size(), 1, 5000);
+    controller->signOut();
+    QTRY_VERIFY_WITH_TIMEOUT(!dialog->property("visible").toBool(), 5000);
+    QVERIFY(dialog->property("pendingKey").toString().isEmpty());
+    QVERIFY(dialog->property("errorMessage").toString().isEmpty());
 }
 
 void SessionControllerTest::serializesAuthenticationAndRecoversAfterCancellation()
