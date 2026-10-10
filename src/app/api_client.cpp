@@ -350,7 +350,7 @@ void ApiClient::deleteDevice(const QString& id)
         return;
     }
     send(QStringLiteral("device-delete"), "DELETE",
-        QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id + QStringLiteral("&select=id")),
+        QUrl(baseUrl_ + QStringLiteral("/rest/v1/devices?id=eq.") + id + QStringLiteral("&select=id,room_id")),
         QByteArray(), true, true, true, id);
 }
 

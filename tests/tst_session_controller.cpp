@@ -64,6 +64,10 @@ struct AuthServerState
     QByteArray roomUpdateRequest;
     int roomUpdateRequests = 0;
     QByteArray roomDeleteRequest;
+    QByteArray roomDeleteBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010"}])");
+    bool deferRoomDeleteResponses = false;
+    QList<DeferredResponse> pendingRoomDeleteResponses;
     QByteArray deviceInsertRequest;
     QByteArray deviceToggleRequest;
     int deviceToggleRequests = 0;
@@ -72,6 +76,10 @@ struct AuthServerState
     QByteArray deviceReadingRequest;
     QByteArray deviceUpdateRequest;
     QByteArray deviceDeleteRequest;
+    QByteArray deviceDeleteBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010"}])");
+    bool deferDeviceDeleteResponses = false;
+    QList<DeferredResponse> pendingDeviceDeleteResponses;
     QByteArray geocodingRequest;
     QByteArray forecastRequest;
     int profileRequests = 0;
@@ -225,7 +233,10 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 payload = state.updatedRoomBody;
             } else if (requestLine.startsWith(QByteArrayLiteral("DELETE /rest/v1/rooms?id=eq."))) {
                 state.roomDeleteRequest = *request;
-                payload = QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174010"}])");
+                payload = state.roomDeleteBody;
+                if (state.deferRoomDeleteResponses) {
+                    deferredResponses = &state.pendingRoomDeleteResponses;
+                }
             } else if (requestLine.startsWith(QByteArrayLiteral("POST /rest/v1/devices?select="))) {
                 state.deviceInsertRequest = *request;
                 if (state.failDeviceInsert) {
@@ -285,7 +296,10 @@ void startAuthServer(QTcpServer& server, AuthServerState& state)
                 }
             } else if (requestLine.startsWith(QByteArrayLiteral("DELETE /rest/v1/devices?id=eq."))) {
                 state.deviceDeleteRequest = *request;
-                payload = QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174020"}])");
+                payload = state.deviceDeleteBody;
+                if (state.deferDeviceDeleteResponses) {
+                    deferredResponses = &state.pendingDeviceDeleteResponses;
+                }
             } else if (requestLine.startsWith(QByteArrayLiteral("GET /geocode?"))) {
                 ++state.geocodingRequests;
                 state.geocodingRequest = *request;
@@ -1085,7 +1099,7 @@ void SessionControllerTest::togglesDeviceAndRollsBackOnFailure()
     QVERIFY(server.listen(QHostAddress::LocalHost, 0));
     AuthServerState state{sessionResponse()};
     state.roomsBody = QByteArrayLiteral(
-        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Desk light","kind":"light","is_on":false,"celsius":null,"reading_at":null,"position":0}]}])");
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Desk light","kind":"light","is_on":false,"celsius":null,"reading_at":null,"position":0},{"id":"123e4567-e89b-12d3-a456-426614174021","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Other light","kind":"light","is_on":false,"celsius":null,"reading_at":null,"position":1}]}])");
     startAuthServer(server, state);
 
     SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
@@ -1153,13 +1167,15 @@ void SessionControllerTest::renamesAndDeletesDevice()
     QVERIFY(server.listen(QHostAddress::LocalHost, 0));
     AuthServerState state{sessionResponse()};
     state.roomsBody = QByteArrayLiteral(
-        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Desk light","kind":"light","is_on":false,"celsius":null,"reading_at":null,"position":0}]}])");
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Desk light","kind":"light","is_on":false,"celsius":null,"reading_at":null,"position":0},{"id":"123e4567-e89b-12d3-a456-426614174021","room_id":"123e4567-e89b-12d3-a456-426614174010","name":"Floor lamp","kind":"light","is_on":false,"celsius":null,"reading_at":null,"position":1}]}])");
     startAuthServer(server, state);
 
     SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
         QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
     QSignalSpy renamed(&controller, &SessionController::renameFinished);
+    QSignalSpy deleted(&controller, &SessionController::deleteFinished);
     QVERIFY(renamed.isValid());
+    QVERIFY(deleted.isValid());
     QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
     QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
     const QString deviceId = QStringLiteral("123e4567-e89b-12d3-a456-426614174020");
@@ -1214,12 +1230,55 @@ void SessionControllerTest::renamesAndDeletesDevice()
 
     QVERIFY(!controller.deleteDevice(QStringLiteral("not-a-uuid")));
     QVERIFY(state.deviceDeleteRequest.isEmpty());
+    state.deferDeviceDeleteResponses = true;
+    const QString siblingDeviceId = QStringLiteral("123e4567-e89b-12d3-a456-426614174021");
+    for (const QByteArray& response : {
+             QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010"},{}])"),
+             QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174021","room_id":"123e4567-e89b-12d3-a456-426614174010"}])"),
+             QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174011"}])")}) {
+        const QVariantList previousRooms = controller.rooms();
+        const int previousDeletes = deleted.count();
+        state.deviceDeleteBody = response;
+        QVERIFY(controller.deleteDevice(deviceId));
+        QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceDeleteResponses.size(), 1, 5000);
+        writeResponse(state.pendingDeviceDeleteResponses.takeFirst());
+        QTRY_COMPARE_WITH_TIMEOUT(deleted.count(), previousDeletes + 1, 5000);
+        QCOMPARE(deleted.last().at(0).toString(), QStringLiteral("device:") + deviceId);
+        QVERIFY(!deleted.last().at(1).toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(controller.statusMessage().contains(QStringLiteral("service could not complete")),
+            5000);
+        QCOMPARE(controller.rooms(), previousRooms);
+        QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList().size(), 2);
+        QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
+            .at(1).toMap().value(QStringLiteral("deviceId")).toString(), siblingDeviceId);
+    }
+    const QVariantList previousRooms = controller.rooms();
+    const int previousDeletes = deleted.count();
+    QVERIFY(controller.deleteDevice(deviceId));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingDeviceDeleteResponses.size(), 1, 5000);
+    DeferredResponse failedDelete = state.pendingDeviceDeleteResponses.takeFirst();
+    failedDelete.status = 500;
+    failedDelete.reason = QByteArrayLiteral("Internal Server Error");
+    failedDelete.payload = QByteArrayLiteral(R"({"message":"delete rejected"})");
+    writeResponse(failedDelete);
+    QTRY_COMPARE_WITH_TIMEOUT(deleted.count(), previousDeletes + 1, 5000);
+    QCOMPARE(deleted.last().at(0).toString(), QStringLiteral("device:") + deviceId);
+    QVERIFY(!deleted.last().at(1).toBool());
+    QCOMPARE(controller.rooms(), previousRooms);
+
+    state.deferDeviceDeleteResponses = false;
+    state.deviceDeleteBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174020","room_id":"123e4567-e89b-12d3-a456-426614174010"}])");
     QVERIFY(controller.deleteDevice(deviceId));
     QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList().size(),
-        0, 5000);
+        1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(deleted.count(), previousDeletes + 2, 5000);
+    QCOMPARE(deleted.last().at(0).toString(), QStringLiteral("device:") + deviceId);
+    QVERIFY(deleted.last().at(1).toBool());
     QVERIFY(state.deviceDeleteRequest.startsWith(QByteArrayLiteral("DELETE /rest/v1/devices?id=eq.")));
     QVERIFY(state.deviceDeleteRequest.toLower().contains(
         QByteArrayLiteral("authorization: bearer access-token")));
+    QVERIFY(state.deviceDeleteRequest.contains(QByteArrayLiteral("select=id,room_id")));
 }
 
 void SessionControllerTest::renamesAndDeletesRoom()
@@ -1240,7 +1299,9 @@ void SessionControllerTest::renamesAndDeletesRoom()
     SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
         QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
     QSignalSpy renamed(&controller, &SessionController::renameFinished);
+    QSignalSpy deleted(&controller, &SessionController::deleteFinished);
     QVERIFY(renamed.isValid());
+    QVERIFY(deleted.isValid());
     QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
     QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 2, 5000);
     const QString roomId = QStringLiteral("123e4567-e89b-12d3-a456-426614174010");
@@ -1290,8 +1351,46 @@ void SessionControllerTest::renamesAndDeletesRoom()
 
     QVERIFY(!controller.deleteRoom(QStringLiteral("not-a-uuid")));
     QVERIFY(state.roomDeleteRequest.isEmpty());
+    state.deferRoomDeleteResponses = true;
+    for (const QByteArray& response : {
+             QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174010"},{}])"),
+             QByteArrayLiteral(R"([{"id":"123e4567-e89b-12d3-a456-426614174011"}])")}) {
+        const QVariantList previousRooms = controller.rooms();
+        const int previousDeletes = deleted.count();
+        state.roomDeleteBody = response;
+        QVERIFY(controller.deleteRoom(roomId));
+        QTRY_COMPARE_WITH_TIMEOUT(state.pendingRoomDeleteResponses.size(), 1, 5000);
+        writeResponse(state.pendingRoomDeleteResponses.takeFirst());
+        QTRY_COMPARE_WITH_TIMEOUT(deleted.count(), previousDeletes + 1, 5000);
+        QCOMPARE(deleted.last().at(0).toString(), QStringLiteral("room:") + roomId);
+        QVERIFY(!deleted.last().at(1).toBool());
+        QTRY_VERIFY_WITH_TIMEOUT(controller.statusMessage().contains(QStringLiteral("service could not complete")),
+            5000);
+        QCOMPARE(controller.rooms(), previousRooms);
+    }
+    const QVariantList previousRooms = controller.rooms();
+    int previousDeletes = deleted.count();
+    QVERIFY(controller.deleteRoom(roomId));
+    QTRY_COMPARE_WITH_TIMEOUT(state.pendingRoomDeleteResponses.size(), 1, 5000);
+    DeferredResponse failedDelete = state.pendingRoomDeleteResponses.takeFirst();
+    failedDelete.status = 500;
+    failedDelete.reason = QByteArrayLiteral("Internal Server Error");
+    failedDelete.payload = QByteArrayLiteral(R"({"message":"delete rejected"})");
+    writeResponse(failedDelete);
+    QTRY_COMPARE_WITH_TIMEOUT(deleted.count(), previousDeletes + 1, 5000);
+    QCOMPARE(deleted.last().at(0).toString(), QStringLiteral("room:") + roomId);
+    QVERIFY(!deleted.last().at(1).toBool());
+    QCOMPARE(controller.rooms(), previousRooms);
+
+    state.deferRoomDeleteResponses = false;
+    state.roomDeleteBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010"}])");
+    previousDeletes = deleted.count();
     QVERIFY(controller.deleteRoom(roomId));
     QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(deleted.count(), previousDeletes + 1, 5000);
+    QCOMPARE(deleted.last().at(0).toString(), QStringLiteral("room:") + roomId);
+    QVERIFY(deleted.last().at(1).toBool());
     QVERIFY(state.roomDeleteRequest.startsWith(QByteArrayLiteral("DELETE /rest/v1/rooms?id=eq.")));
     QVERIFY(state.roomDeleteRequest.toLower().contains(
         QByteArrayLiteral("authorization: bearer access-token")));
