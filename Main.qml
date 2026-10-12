@@ -754,8 +754,16 @@ Window {
             ComboBox {
                 id: deviceKind
                 Layout.fillWidth: true
-                model: [qsTr("Light"), qsTr("Plug"), qsTr("Thermometer")]
+                model: [qsTr("Light"), qsTr("Plug")]
                 Accessible.name: qsTr("Device type")
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: qsTr("Sensor setup is unavailable until its telemetry contract is confirmed.")
+                color: "#FFFFFF"
+                opacity: 0.7
+                wrapMode: Text.WordWrap
             }
 
             Label {
@@ -778,8 +786,7 @@ Window {
                     if (!root.selectedRoom) {
                         return
                     }
-                    var kind = deviceKind.currentIndex === 0 ? "light"
-                        : deviceKind.currentIndex === 1 ? "plug" : "thermometer"
+                    var kind = deviceKind.currentIndex === 0 ? "light" : "plug"
                     root.deviceCreatePending = true
                     if (!session.createDevice(root.selectedRoom.id, deviceNameInput.text, kind)) {
                         root.deviceCreatePending = false

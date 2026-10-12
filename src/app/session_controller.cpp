@@ -8,7 +8,6 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QRandomGenerator>
 #include <QTime>
 #include <QVariant>
 #include <QVariantList>
@@ -306,8 +305,11 @@ bool SessionController::createDevice(const QString& roomId, const QString& name,
         setStatus(tr("Use 1 to 40 characters for the device name."));
         return false;
     }
-    if (kind != QLatin1String("light") && kind != QLatin1String("plug")
-        && kind != QLatin1String("thermometer")) {
+    if (kind == QLatin1String("thermometer")) {
+        setStatus(tr("Sensor setup is unavailable until its telemetry contract is confirmed."));
+        return false;
+    }
+    if (kind != QLatin1String("light") && kind != QLatin1String("plug")) {
         setStatus(tr("Choose a supported device type."));
         return false;
     }
@@ -458,9 +460,6 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
     if (!isCurrentResponse(op, requestId)) {
         if (op == QLatin1String("device-on") && entityKey.startsWith(QStringLiteral("device:"))) {
             clearPendingDeviceToggle(entityKey.mid(QStringLiteral("device:").size()), false);
-        } else if (op == QLatin1String("device-reading")
-            && entityKey == QStringLiteral("device:") + pendingReadingId_) {
-            pendingReadingId_.clear();
         }
         finishTrackedResponse(requestId);
         return;
@@ -502,7 +501,6 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
         roomRows_ = *rooms;
         emit roomsChanged();
         setStatus({});
-        walkStaleReadings();
         return;
     }
     if (op == QLatin1String("room-insert")) {
@@ -698,30 +696,6 @@ void SessionController::onCompleted(const QString& op, quint64 requestId, int, c
         setStatus(tr("Couldn't update the device."));
         return;
     }
-    if (op == QLatin1String("device-reading")) {
-        const std::optional<QList<DeviceRow>> devices = parseDevices(body);
-        if (!devices.has_value() || devices->size() != 1
-            || devices->first().id != pendingReadingId_ || !devices->first().celsius.has_value()) {
-            pendingReadingId_.clear();
-            setStatus(tr("Couldn't update the thermometer."));
-            return;
-        }
-        const DeviceRow updated = devices->first();
-        for (RoomRow& room : roomRows_) {
-            for (DeviceRow& device : room.devices) {
-                if (device.id == updated.id) {
-                    device = updated;
-                    pendingReadingId_.clear();
-                    emit roomsChanged();
-                    setStatus({});
-                    return;
-                }
-            }
-        }
-        pendingReadingId_.clear();
-        setStatus(tr("Couldn't update the thermometer."));
-        return;
-    }
     if (op == QLatin1String("profile") || op == QLatin1String("profile-update")) {
         const std::optional<ProfileRow> profile = parseProfile(body);
         if (!profile.has_value() || profile->id != userId_) {
@@ -769,9 +743,6 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
     if (!isCurrentResponse(op, requestId)) {
         if (op == QLatin1String("device-on") && entityKey.startsWith(QStringLiteral("device:"))) {
             clearPendingDeviceToggle(entityKey.mid(QStringLiteral("device:").size()), true);
-        } else if (op == QLatin1String("device-reading")
-            && entityKey == QStringLiteral("device:") + pendingReadingId_) {
-            pendingReadingId_.clear();
         }
         finishTrackedResponse(requestId);
         return;
@@ -820,9 +791,6 @@ void SessionController::onFailed(const QString& op, quint64 requestId, int statu
                 clearPendingDeviceToggle(pendingId, true);
             }
         }
-        setStatus(message);
-    } else if (op == QLatin1String("device-reading")) {
-        pendingReadingId_.clear();
         setStatus(message);
     } else if (op == QLatin1String("geocode")) {
         pendingGeocodingCity_.clear();
@@ -947,7 +915,6 @@ void SessionController::clearLocal()
     pendingGeocodingCity_.clear();
     weatherLocation_.reset();
     pendingDeviceOnStates_.clear();
-    pendingReadingId_.clear();
     latestProfileRequestId_ = 0;
     latestProfileUpdateRequestId_ = 0;
     latestRoomsRequestId_ = 0;
@@ -1009,29 +976,6 @@ int SessionController::nextDevicePosition(const QString& roomId) const
         break;
     }
     return position;
-}
-
-void SessionController::walkStaleReadings()
-{
-    if (!signedIn_ || !pendingReadingId_.isEmpty()) {
-        return;
-    }
-    const QDateTime now = QDateTime::currentDateTimeUtc();
-    for (const RoomRow& room : roomRows_) {
-        for (const DeviceRow& device : room.devices) {
-            if (device.kind != QLatin1String("thermometer") || !device.celsius.has_value()
-                || !readingIsStale(device.readingAt, now)) {
-                continue;
-            }
-            int tenths = QRandomGenerator::global()->bounded(-3, 4);
-            if (tenths == 0) {
-                tenths = 1;
-            }
-            pendingReadingId_ = device.id;
-            api_.setReading(device.id, nextCelsius(*device.celsius, tenths / 10.0), now);
-            return;
-        }
-    }
 }
 
 void SessionController::updateWeather()

@@ -87,7 +87,6 @@ private:
     void startRefresh();
     void applySession(const SessionTokens& session, bool isRefresh);
     void clearLocal();
-    void walkStaleReadings();
     void updateWeather();
     int nextRoomPosition() const;
     int nextDevicePosition(const QString& roomId) const;
@@ -110,7 +109,6 @@ private:
     std::optional<GeoHit> weatherLocation_;
     QList<RoomRow> roomRows_;
     QHash<QString, bool> pendingDeviceOnStates_;
-    QString pendingReadingId_;
     QString pendingRoomCreateName_;
     QString pendingDeviceCreateRoomId_;
     QString pendingDeviceCreateName_;
