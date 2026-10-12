@@ -8,6 +8,7 @@ class HomeRulesTest : public QObject
 
 private slots:
     void greetingBands();
+    void deviceCreationKinds();
     void fieldLimits();
 };
 
@@ -22,6 +23,14 @@ void HomeRulesTest::greetingBands()
     QCOMPARE(greetingFor(QTime(20, 59)), QStringLiteral("Good evening,"));
     QCOMPARE(greetingFor(QTime(21, 0)), QStringLiteral("Good night,"));
     QCOMPARE(greetingFor(QTime(0, 0)), QStringLiteral("Good night,"));
+}
+
+void HomeRulesTest::deviceCreationKinds()
+{
+    QVERIFY(isDeviceKindCreatable(QStringLiteral("light")));
+    QVERIFY(isDeviceKindCreatable(QStringLiteral("plug")));
+    QVERIFY(!isDeviceKindCreatable(QStringLiteral("thermometer")));
+    QVERIFY(!isDeviceKindCreatable(QStringLiteral("unknown")));
 }
 
 void HomeRulesTest::fieldLimits()
