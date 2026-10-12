@@ -15,6 +15,7 @@ class ApiClientTest : public QObject
 private slots:
     void authRequests_data();
     void authRequests();
+    void emptyCityIsSentAsNull();
     void deviceInsert_data();
     void deviceInsert();
     void rejectsThermometerInsert();
@@ -126,6 +127,56 @@ void ApiClientTest::authRequests()
     } else if (requestKind == 3) {
         QCOMPARE(body, QJsonObject{});
     }
+}
+
+void ApiClientTest::emptyCityIsSentAsNull()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    QByteArray request;
+    bool requestComplete = false;
+    connect(&server, &QTcpServer::newConnection, &server, [&]() {
+        QTcpSocket* socket = server.nextPendingConnection();
+        connect(socket, &QTcpSocket::readyRead, socket, [&, socket]() {
+            request.append(socket->readAll());
+            const qsizetype headerEnd = request.indexOf(QByteArrayLiteral("\r\n\r\n"));
+            if (headerEnd < 0) {
+                return;
+            }
+            const QByteArray headers = request.left(headerEnd).toLower();
+            const qsizetype lengthStart = headers.indexOf(QByteArrayLiteral("content-length:"));
+            if (lengthStart < 0) {
+                return;
+            }
+            const qsizetype valueStart = lengthStart + qsizetype(sizeof("content-length:") - 1);
+            const qsizetype lineEnd = headers.indexOf(QByteArrayLiteral("\r\n"), valueStart);
+            bool validLength = false;
+            const qint64 contentLength = headers.mid(valueStart, lineEnd - valueStart).trimmed().toLongLong(&validLength);
+            if (!validLength || request.size() < headerEnd + 4 + contentLength) {
+                return;
+            }
+            requestComplete = true;
+            socket->write(QByteArrayLiteral(
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}"));
+        });
+    });
+
+    ApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"));
+    client.setAccessToken(QStringLiteral("access-token"));
+    QSignalSpy completed(&client, &ApiClient::completed);
+    QVERIFY(completed.isValid());
+
+    client.updateProfile(QStringLiteral("123e4567-e89b-12d3-a456-426614174000"), QStringLiteral("Amina"), QString());
+
+    QTRY_VERIFY_WITH_TIMEOUT(requestComplete, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 1, 5000);
+    QVERIFY(request.startsWith(QByteArrayLiteral("PATCH /rest/v1/profiles?id=eq.")));
+    const QJsonObject body = QJsonDocument::fromJson(
+        request.mid(request.indexOf(QByteArrayLiteral("\r\n\r\n")) + 4)).object();
+    QCOMPARE(body.value(QStringLiteral("first_name")).toString(), QStringLiteral("Amina"));
+    QCOMPARE(body.value(QStringLiteral("city")).type(), QJsonValue::Null);
 }
 
 void ApiClientTest::deviceInsert_data()
