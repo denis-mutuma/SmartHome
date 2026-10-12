@@ -17,6 +17,11 @@ QString greetingFor(QTime time)
     return QStringLiteral("Good night,");
 }
 
+bool isDeviceKindCreatable(const QString& kind)
+{
+    return kind == QLatin1String("light") || kind == QLatin1String("plug");
+}
+
 bool isUuid(const QString& value)
 {
     static const QRegularExpression pattern(

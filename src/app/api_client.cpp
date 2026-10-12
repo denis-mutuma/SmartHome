@@ -281,7 +281,7 @@ void ApiClient::insertDevice(const QString& roomId, const QString& name, const Q
     if (!guardConfig(QStringLiteral("device-insert")) || !guardUuid(QStringLiteral("device-insert"), roomId)) {
         return;
     }
-    if (kind != QLatin1String("light") && kind != QLatin1String("plug")) {
+    if (!isDeviceKindCreatable(kind)) {
         emit failed(QStringLiteral("device-insert"), 0, 0,
             QStringLiteral("Unsupported device type."));
         return;

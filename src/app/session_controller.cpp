@@ -305,12 +305,10 @@ bool SessionController::createDevice(const QString& roomId, const QString& name,
         setStatus(tr("Use 1 to 40 characters for the device name."));
         return false;
     }
-    if (kind == QLatin1String("thermometer")) {
-        setStatus(tr("Sensor setup is unavailable until its telemetry contract is confirmed."));
-        return false;
-    }
-    if (kind != QLatin1String("light") && kind != QLatin1String("plug")) {
-        setStatus(tr("Choose a supported device type."));
+    if (!isDeviceKindCreatable(kind)) {
+        setStatus(kind == QLatin1String("thermometer")
+                ? tr("Sensor setup is unavailable until its telemetry contract is confirmed.")
+                : tr("Choose a supported device type."));
         return false;
     }
     const auto room = std::find_if(roomRows_.cbegin(), roomRows_.cend(), [&roomId](const RoomRow& row) {
