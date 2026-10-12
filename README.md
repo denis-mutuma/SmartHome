@@ -1,6 +1,6 @@
 # SmartHome
 
-Qt 6.11 / QML / C++ prototype for Android and Windows. Accounts and rooms currently use Supabase; weather uses Open-Meteo. Device switches update database rows and thermometer readings are simulated, not hardware telemetry.
+Qt 6.11 / QML / C++ prototype for Android and Windows. Accounts and rooms currently use Supabase; weather uses Open-Meteo. Device switches update database rows. Existing thermometer rows are display-only; the client does not create or update readings until a real telemetry contract is confirmed.
 
 The real-device product direction and undecided integration choices are explained in [docs/architecture.md](docs/architecture.md).
 

@@ -436,8 +436,8 @@ private slots:
     void togglesIndependentDevicesConcurrently();
     void renamesAndDeletesDevice();
     void renamesAndDeletesRoom();
-    void updatesOnlyStaleThermometer();
-    void updatesThermometerWithNullReadingTime();
+    void keepsStaleThermometerReadingsUnchanged();
+    void keepsNullTimestampThermometerReadingsUnchanged();
     void loadsWeatherForProfileCity();
     void pollingFollowsSignInAndApplicationState();
     void reloadFetchesProfileAndRooms();
@@ -1081,6 +1081,9 @@ void SessionControllerTest::createsDeviceInExistingRoom()
     const QString roomId = QStringLiteral("123e4567-e89b-12d3-a456-426614174010");
     QVERIFY(!controller.createDevice(roomId, QString(), QStringLiteral("light")));
     QVERIFY(!controller.createDevice(roomId, QStringLiteral("Desk light"), QStringLiteral("camera")));
+    QVERIFY(!controller.createDevice(roomId, QStringLiteral("Probe"), QStringLiteral("thermometer")));
+    QCOMPARE(controller.statusMessage(),
+        QStringLiteral("Sensor setup is unavailable until its telemetry contract is confirmed."));
     QVERIFY(!controller.createDevice(QStringLiteral("123e4567-e89b-12d3-a456-426614174099"),
         QStringLiteral("Desk light"), QStringLiteral("light")));
     QVERIFY(state.deviceInsertRequest.isEmpty());
@@ -1497,7 +1500,7 @@ void SessionControllerTest::renamesAndDeletesRoom()
         QByteArrayLiteral("authorization: bearer access-token")));
 }
 
-void SessionControllerTest::updatesOnlyStaleThermometer()
+void SessionControllerTest::keepsStaleThermometerReadingsUnchanged()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -1532,22 +1535,17 @@ void SessionControllerTest::updatesOnlyStaleThermometer()
     SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
         QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
     QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
-    QTRY_VERIFY_WITH_TIMEOUT(!state.deviceReadingRequest.isEmpty(), 5000);
-    QTRY_VERIFY_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices"))
-        .toList().first().toMap().value(QStringLiteral("celsius")).toDouble() != 23.4, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+    QTest::qWait(100);
 
-    QCOMPARE(state.deviceReadingRequest.startsWith(QByteArrayLiteral("PATCH /rest/v1/devices?id=eq.123e4567-e89b-12d3-a456-426614174030")), true);
-    QVERIFY(state.deviceReadingRequest.left(state.deviceReadingRequest.indexOf(QByteArrayLiteral("\r\n\r\n")))
-        .toLower().contains(QByteArrayLiteral("\r\nauthorization: bearer access-token")));
-    const QJsonObject reading = requestBody(state.deviceReadingRequest);
-    QVERIFY(reading.value(QStringLiteral("celsius")).toDouble() >= 18.0);
-    QVERIFY(reading.value(QStringLiteral("celsius")).toDouble() <= 28.0);
-    QVERIFY(QDateTime::fromString(reading.value(QStringLiteral("reading_at")).toString(), Qt::ISODateWithMs).isValid());
-    QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
-        .at(1).toMap().value(QStringLiteral("celsius")).toDouble(), 22.4);
+    QVERIFY(state.deviceReadingRequest.isEmpty());
+    const QVariantList displayedDevices = controller.rooms().first().toMap().value(QStringLiteral("devices")).toList();
+    QCOMPARE(displayedDevices.size(), 2);
+    QCOMPARE(displayedDevices.at(0).toMap().value(QStringLiteral("celsius")).toDouble(), 23.4);
+    QCOMPARE(displayedDevices.at(1).toMap().value(QStringLiteral("celsius")).toDouble(), 22.4);
 }
 
-void SessionControllerTest::updatesThermometerWithNullReadingTime()
+void SessionControllerTest::keepsNullTimestampThermometerReadingsUnchanged()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -1561,15 +1559,13 @@ void SessionControllerTest::updatesThermometerWithNullReadingTime()
     SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
         QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
     QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
-    QTRY_VERIFY_WITH_TIMEOUT(!state.deviceReadingRequest.isEmpty(), 5000);
-    const QJsonObject reading = requestBody(state.deviceReadingRequest);
-    QVERIFY(QDateTime::fromString(reading.value(QStringLiteral("reading_at")).toString(), Qt::ISODateWithMs)
-        .isValid());
-    const double updatedCelsius = reading.value(QStringLiteral("celsius")).toDouble();
-    QVERIFY(updatedCelsius >= 18.0 && updatedCelsius <= 28.0);
-    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
-                                  .first().toMap().value(QStringLiteral("celsius")).toDouble(),
-        updatedCelsius, 5000);
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+    QTest::qWait(100);
+
+    QVERIFY(state.deviceReadingRequest.isEmpty());
+    QCOMPARE(controller.rooms().first().toMap().value(QStringLiteral("devices")).toList()
+                 .first().toMap().value(QStringLiteral("celsius")).toDouble(),
+        22.0);
 }
 
 void SessionControllerTest::loadsWeatherForProfileCity()

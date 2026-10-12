@@ -1,7 +1,6 @@
 #include "api_client.h"
 
 #include <QHostAddress>
-#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSignalSpy>
@@ -18,6 +17,7 @@ private slots:
     void authRequests();
     void deviceInsert_data();
     void deviceInsert();
+    void rejectsThermometerInsert();
 };
 
 void ApiClientTest::authRequests_data()
@@ -132,7 +132,7 @@ void ApiClientTest::deviceInsert_data()
 {
     QTest::addColumn<QString>("kind");
     QTest::newRow("light") << QStringLiteral("light");
-    QTest::newRow("thermometer") << QStringLiteral("thermometer");
+    QTest::newRow("plug") << QStringLiteral("plug");
 }
 
 void ApiClientTest::deviceInsert()
@@ -187,15 +187,23 @@ void ApiClientTest::deviceInsert()
     QCOMPARE(body.value(QStringLiteral("room_id")).toString(), roomId);
     QCOMPARE(body.value(QStringLiteral("kind")).toString(), kind);
     QCOMPARE(body.value(QStringLiteral("position")).toInt(), 4);
-    if (kind == QLatin1String("thermometer")) {
-        QVERIFY(body.value(QStringLiteral("is_on")).isNull());
-        QCOMPARE(body.value(QStringLiteral("celsius")).toDouble(), 22.0);
-        QVERIFY(QDateTime::fromString(body.value(QStringLiteral("reading_at")).toString(), Qt::ISODateWithMs).isValid());
-    } else {
-        QCOMPARE(body.value(QStringLiteral("is_on")).toBool(), false);
-        QVERIFY(body.value(QStringLiteral("celsius")).isNull());
-        QVERIFY(body.value(QStringLiteral("reading_at")).isNull());
-    }
+    QCOMPARE(body.value(QStringLiteral("is_on")).toBool(), false);
+    QVERIFY(body.value(QStringLiteral("celsius")).isNull());
+    QVERIFY(body.value(QStringLiteral("reading_at")).isNull());
+}
+
+void ApiClientTest::rejectsThermometerInsert()
+{
+    ApiClient client(QStringLiteral("http://127.0.0.1:1"), QStringLiteral("public-anon-key"));
+    QSignalSpy failed(&client, &ApiClient::failed);
+    QVERIFY(failed.isValid());
+
+    client.insertDevice(QStringLiteral("123e4567-e89b-12d3-a456-426614174000"),
+        QStringLiteral("Probe"), QStringLiteral("thermometer"), 0);
+
+    QCOMPARE(failed.count(), 1);
+    QCOMPARE(failed.first().at(0).toString(), QStringLiteral("device-insert"));
+    QCOMPARE(failed.first().at(1).toULongLong(), quint64(0));
 }
 
 QTEST_GUILESS_MAIN(ApiClientTest)
