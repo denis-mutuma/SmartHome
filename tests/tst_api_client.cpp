@@ -16,6 +16,7 @@ private slots:
     void authRequests_data();
     void authRequests();
     void emptyCityIsSentAsNull();
+    void cancelledRequestsDoNotEmitResults();
     void deviceInsert_data();
     void deviceInsert();
     void rejectsThermometerInsert();
@@ -177,6 +178,36 @@ void ApiClientTest::emptyCityIsSentAsNull()
         request.mid(request.indexOf(QByteArrayLiteral("\r\n\r\n")) + 4)).object();
     QCOMPARE(body.value(QStringLiteral("first_name")).toString(), QStringLiteral("Amina"));
     QCOMPARE(body.value(QStringLiteral("city")).type(), QJsonValue::Null);
+}
+
+void ApiClientTest::cancelledRequestsDoNotEmitResults()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"));
+    client.setAccessToken(QStringLiteral("access-token"));
+    QSignalSpy completed(&client, &ApiClient::completed);
+    QSignalSpy failed(&client, &ApiClient::failed);
+    QVERIFY(completed.isValid());
+    QVERIFY(failed.isValid());
+
+    QTcpSocket* acceptedSocket = nullptr;
+    connect(&server, &QTcpServer::newConnection, &server, [&]() {
+        acceptedSocket = server.nextPendingConnection();
+    });
+    client.updateProfile(QStringLiteral("123e4567-e89b-12d3-a456-426614174000"),
+        QStringLiteral("Amina"), QStringLiteral("Nairobi"));
+    QTRY_VERIFY_WITH_TIMEOUT(acceptedSocket != nullptr, 5000);
+
+    QSignalSpy disconnected(acceptedSocket, &QTcpSocket::disconnected);
+    QVERIFY(disconnected.isValid());
+    client.cancelPendingRequests();
+
+    QTRY_COMPARE_WITH_TIMEOUT(disconnected.count(), 1, 5000);
+    QCOMPARE(completed.count(), 0);
+    QCOMPARE(failed.count(), 0);
 }
 
 void ApiClientTest::deviceInsert_data()
