@@ -3,6 +3,7 @@
 #include <QHostAddress>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMap>
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -17,6 +18,7 @@ private slots:
     void authRequests();
     void emptyCityIsSentAsNull();
     void cancelledRequestsDoNotEmitResults();
+    void concurrentUnauthorizedRequestsRetryIndependently();
     void deviceInsert_data();
     void deviceInsert();
     void rejectsThermometerInsert();
@@ -208,6 +210,83 @@ void ApiClientTest::cancelledRequestsDoNotEmitResults()
     QTRY_COMPARE_WITH_TIMEOUT(disconnected.count(), 1, 5000);
     QCOMPARE(completed.count(), 0);
     QCOMPARE(failed.count(), 0);
+}
+
+void ApiClientTest::concurrentUnauthorizedRequestsRetryIndependently()
+{
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+
+    ApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"));
+    client.setAccessToken(QStringLiteral("old-access"));
+    QSignalSpy authenticationRequired(&client, &ApiClient::authenticationRequired);
+    QSignalSpy completed(&client, &ApiClient::completed);
+    QSignalSpy failed(&client, &ApiClient::failed);
+    QVERIFY(authenticationRequired.isValid());
+    QVERIFY(completed.isValid());
+    QVERIFY(failed.isValid());
+
+    QList<QByteArray> requests;
+    connect(&server, &QTcpServer::newConnection, &server, [&]() {
+        QTcpSocket* socket = server.nextPendingConnection();
+        connect(socket, &QTcpSocket::readyRead, socket, [&, socket]() {
+            QByteArray request = socket->property("request").toByteArray();
+            request.append(socket->readAll());
+            socket->setProperty("request", request);
+            if (request.indexOf(QByteArrayLiteral("\r\n\r\n")) < 0 || socket->property("responded").toBool()) {
+                return;
+            }
+            socket->setProperty("responded", true);
+            requests.append(request);
+            const QByteArray response = requests.size() <= 2
+                ? QByteArrayLiteral("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                : QByteArrayLiteral("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            socket->write(response);
+        });
+    });
+
+    client.fetchProfile();
+    client.fetchRooms();
+    QTRY_COMPARE_WITH_TIMEOUT(authenticationRequired.count(), 2, 5000);
+    QCOMPARE(failed.count(), 0);
+
+    QMap<QString, quint64> requestIds;
+    for (const QList<QVariant>& arguments : authenticationRequired) {
+        requestIds.insert(arguments.at(0).toString(), arguments.at(1).toULongLong());
+    }
+    QCOMPARE(requestIds.size(), 2);
+    QVERIFY(requestIds.contains(QStringLiteral("profile")));
+    QVERIFY(requestIds.contains(QStringLiteral("rooms")));
+    QVERIFY(requestIds.value(QStringLiteral("profile")) != requestIds.value(QStringLiteral("rooms")));
+    QVERIFY(client.queueRetry(requestIds.value(QStringLiteral("profile"))));
+    QVERIFY(client.queueRetry(requestIds.value(QStringLiteral("rooms"))));
+    QVERIFY(!client.queueRetry(requestIds.value(QStringLiteral("profile"))));
+
+    client.setAccessToken(QStringLiteral("fresh-access"));
+    client.retryQueuedRequests();
+    QTRY_COMPARE_WITH_TIMEOUT(completed.count(), 2, 5000);
+    QCOMPARE(failed.count(), 0);
+    QCOMPARE(requests.size(), 4);
+
+    QMap<QByteArray, int> oldTokenRequests;
+    QMap<QByteArray, int> freshTokenRequests;
+    for (const QByteArray& request : requests) {
+        const qsizetype lineEnd = request.indexOf(QByteArrayLiteral("\r\n"));
+        const QList<QByteArray> line = request.left(lineEnd).split(' ');
+        QVERIFY(line.size() >= 2);
+        const QByteArray path = line.at(1).left(line.at(1).indexOf('?'));
+        const QByteArray headers = request.left(request.indexOf(QByteArrayLiteral("\r\n\r\n"))).toLower();
+        if (headers.contains(QByteArrayLiteral("authorization: bearer old-access"))) {
+            ++oldTokenRequests[path];
+        } else if (headers.contains(QByteArrayLiteral("authorization: bearer fresh-access"))) {
+            ++freshTokenRequests[path];
+        }
+    }
+    QCOMPARE(oldTokenRequests.value(QByteArrayLiteral("/rest/v1/profiles")), 1);
+    QCOMPARE(oldTokenRequests.value(QByteArrayLiteral("/rest/v1/rooms")), 1);
+    QCOMPARE(freshTokenRequests.value(QByteArrayLiteral("/rest/v1/profiles")), 1);
+    QCOMPARE(freshTokenRequests.value(QByteArrayLiteral("/rest/v1/rooms")), 1);
 }
 
 void ApiClientTest::deviceInsert_data()
