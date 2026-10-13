@@ -2,6 +2,7 @@
 
 #include "token_store.h"
 
+#include <QDir>
 #include <QFile>
 #include <QHostAddress>
 #include <QJsonArray>
@@ -419,6 +420,7 @@ private slots:
     void uiClearsCredentialsAndResetsOnSessionEnd();
     void serializesAuthenticationAndRecoversAfterCancellation();
     void signInPersistsRefreshTokenAndSignOutClearsIt();
+    void signOutWarnsWhenSavedSessionCannotBeRemoved();
     void tokenPersistenceFailureKeepsSessionSignedOut();
     void registerSendsNormalizedAccountDetails();
     void rejectsInvalidCredentials();
@@ -736,6 +738,32 @@ void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
     QVERIFY(loadRefreshToken(tokenPath).isEmpty());
     QTRY_VERIFY_WITH_TIMEOUT(!state.logoutRequest.isEmpty(), 5000);
     QVERIFY(state.logoutRequest.toLower().contains(QByteArrayLiteral("authorization: bearer access-token")));
+}
+
+void SessionControllerTest::signOutWarnsWhenSavedSessionCannotBeRemoved()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString tokenPath = directory.filePath(QStringLiteral("refresh-token.bin"));
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), tokenPath);
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_VERIFY_WITH_TIMEOUT(controller.signedIn(), 5000);
+    QVERIFY(!loadRefreshToken(tokenPath).isEmpty());
+
+    QVERIFY(QFile::remove(tokenPath));
+    QVERIFY(QDir().mkdir(tokenPath));
+    controller.signOut();
+
+    QVERIFY(!controller.signedIn());
+    QCOMPARE(controller.statusMessage(), QStringLiteral("Could not clear the session."));
+    QVERIFY(QDir(tokenPath).exists());
 }
 
 void SessionControllerTest::tokenPersistenceFailureKeepsSessionSignedOut()
