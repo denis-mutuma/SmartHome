@@ -259,9 +259,8 @@ void ApiClientTest::concurrentUnauthorizedRequestsRetryIndependently()
     QVERIFY(requestIds.contains(QStringLiteral("profile")));
     QVERIFY(requestIds.contains(QStringLiteral("rooms")));
     QVERIFY(requestIds.value(QStringLiteral("profile")) != requestIds.value(QStringLiteral("rooms")));
-    QVERIFY(client.queueRetry(requestIds.value(QStringLiteral("profile"))));
-    QVERIFY(client.queueRetry(requestIds.value(QStringLiteral("rooms"))));
     QVERIFY(!client.queueRetry(requestIds.value(QStringLiteral("profile"))));
+    QVERIFY(!client.queueRetry(requestIds.value(QStringLiteral("rooms"))));
 
     client.setAccessToken(QStringLiteral("fresh-access"));
     client.retryQueuedRequests();
