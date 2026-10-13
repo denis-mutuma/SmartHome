@@ -8,6 +8,8 @@ Coding agents use [AGENTS.md](AGENTS.md); explanatory documents are references, 
 
 ## Run the desktop app
 
+These steps exercise the current Supabase prototype only; they do not control physical devices or validate telemetry. The migrations are provisional and should be applied only to a disposable prototype project.
+
 1. Create a Supabase Free project and turn off email confirmation.
 2. Run every numbered SQL migration in `supabase/migrations/` in order in the SQL editor. Resolve any preflight findings before continuing.
 3. Copy `config.example.cmake` to `config.local.cmake` and fill in the project URL and anon key.
