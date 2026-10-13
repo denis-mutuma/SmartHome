@@ -2,6 +2,7 @@
 
 #include "token_store.h"
 
+#include <QFile>
 #include <QHostAddress>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -418,6 +419,7 @@ private slots:
     void uiClearsCredentialsAndResetsOnSessionEnd();
     void serializesAuthenticationAndRecoversAfterCancellation();
     void signInPersistsRefreshTokenAndSignOutClearsIt();
+    void tokenPersistenceFailureKeepsSessionSignedOut();
     void registerSendsNormalizedAccountDetails();
     void rejectsInvalidCredentials();
     void restoresSessionWithRotatedRefreshToken();
@@ -734,6 +736,36 @@ void SessionControllerTest::signInPersistsRefreshTokenAndSignOutClearsIt()
     QVERIFY(loadRefreshToken(tokenPath).isEmpty());
     QTRY_VERIFY_WITH_TIMEOUT(!state.logoutRequest.isEmpty(), 5000);
     QVERIFY(state.logoutRequest.toLower().contains(QByteArrayLiteral("authorization: bearer access-token")));
+}
+
+void SessionControllerTest::tokenPersistenceFailureKeepsSessionSignedOut()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString blockerPath = directory.filePath(QStringLiteral("not-a-directory"));
+    QFile blocker(blockerPath);
+    QVERIFY(blocker.open(QIODevice::WriteOnly));
+    blocker.close();
+    const QString tokenPath = blockerPath + QStringLiteral("/refresh-token.bin");
+
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), tokenPath);
+    QSignalSpy signedInChanged(&controller, &SessionController::signedInChanged);
+    QVERIFY(signedInChanged.isValid());
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_VERIFY_WITH_TIMEOUT(!controller.statusMessage().isEmpty(), 5000);
+
+    QVERIFY(!controller.signedIn());
+    QCOMPARE(signedInChanged.count(), 0);
+    QCOMPARE(controller.statusMessage(), QStringLiteral("Could not save the session."));
+    QVERIFY(loadRefreshToken(tokenPath).isEmpty());
+    QVERIFY(state.profileRequest.isEmpty());
+    QVERIFY(state.roomsRequest.isEmpty());
 }
 
 void SessionControllerTest::registerSendsNormalizedAccountDetails()
