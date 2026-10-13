@@ -429,6 +429,7 @@ private slots:
     void refreshesNearExpirySessionOnce();
     void loadsAndSavesProfileSettings();
     void loadsAndCreatesRooms();
+    void emptyMutationResultIsNotSuccess();
     void createsDeviceInExistingRoom();
     void createSignalsOnlyOnSuccess();
     void signOutFailsPendingCreates();
@@ -1060,6 +1061,37 @@ void SessionControllerTest::loadsAndCreatesRooms()
     const QJsonObject body = requestBody(state.roomInsertRequest);
     QCOMPARE(body.value(QStringLiteral("name")).toString(), QStringLiteral("Office"));
     QCOMPARE(body.value(QStringLiteral("position")).toInt(), 3);
+}
+
+void SessionControllerTest::emptyMutationResultIsNotSuccess()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QTcpServer server;
+    QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+    AuthServerState state{sessionResponse()};
+    state.roomsBody = QByteArrayLiteral(
+        R"([{"id":"123e4567-e89b-12d3-a456-426614174010","name":"Living room","position":0,"devices":[]}])");
+    state.insertedRoomBody = QByteArrayLiteral("[]");
+    startAuthServer(server, state);
+
+    SessionController controller(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()),
+        QStringLiteral("public-anon-key"), directory.filePath(QStringLiteral("refresh-token.bin")));
+    QSignalSpy roomCreated(&controller, &SessionController::roomCreated);
+    QSignalSpy roomCreateFailed(&controller, &SessionController::roomCreateFailed);
+    QVERIFY(roomCreated.isValid());
+    QVERIFY(roomCreateFailed.isValid());
+    QVERIFY(controller.signIn(QStringLiteral("person@example.com"), QStringLiteral("correct-horse")));
+    QTRY_COMPARE_WITH_TIMEOUT(controller.rooms().size(), 1, 5000);
+
+    const QVariantList previousRooms = controller.rooms();
+    QVERIFY(controller.createRoom(QStringLiteral("Office")));
+    QTRY_COMPARE_WITH_TIMEOUT(roomCreateFailed.count(), 1, 5000);
+
+    QCOMPARE(roomCreated.count(), 0);
+    QCOMPARE(roomCreateFailed.first().first().toString(), QStringLiteral("Office"));
+    QCOMPARE(controller.rooms(), previousRooms);
+    QVERIFY(controller.statusMessage().contains(QStringLiteral("service could not complete")));
 }
 
 void SessionControllerTest::createsDeviceInExistingRoom()
